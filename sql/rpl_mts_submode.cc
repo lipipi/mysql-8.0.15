@@ -413,7 +413,7 @@ bool Mts_submode_logical_clock::wait_for_get_table_def(
 	for (Slave_worker **it = rli->workers.begin(); it != rli->workers.end();
 	     ++it) {
 	  Slave_worker *w_i = *it;
-//	  if (w_i->table_def_get == 0) return true;
+	  if (w_i->table_def_get == false && w_i->jobs.len) return true;
     }
 	return false;
 }
@@ -637,9 +637,10 @@ int Mts_submode_logical_clock::schedule_next_event(Relay_log_info *rli,
         At awakening set min_waited_timestamp to commit_parent in the
         subsequent GAQ index (could be NIL).
       */
-      if (online_ddl) {
-    	wait_for_get_table_def(rli);
+      if (online_ddl && !wait_for_get_table_def(rli)) {
+
       } else {
+      wait_for_get_table_def(rli);
       if (wait_for_last_committed_trx(rli, last_committed)) {
         /*
           MTS was waiting for a dependent transaction to finish but either it

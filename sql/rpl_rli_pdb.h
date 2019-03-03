@@ -531,6 +531,7 @@ class Slave_worker : public Relay_log_info {
 
   virtual ~Slave_worker();
 
+  bool table_def_get;
   Slave_jobs_queue jobs;    // assignment queue containing events to execute
   mysql_mutex_t jobs_lock;  // mutex for the jobs queue
   mysql_cond_t jobs_cond;   // condition variable for the jobs queue

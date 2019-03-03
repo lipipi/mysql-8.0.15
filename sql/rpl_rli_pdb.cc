@@ -265,6 +265,7 @@ Slave_worker::Slave_worker(Relay_log_info *rli
       worker_checkpoint_seqno(0),
       running_status(NOT_RUNNING),
       exit_incremented(false) {
+  table_def_get = false;
   /*
     In the future, it would be great if we use only one identifier.
     So when factoring out this code, please, consider this.
@@ -1255,6 +1256,7 @@ void Slave_worker::slave_worker_ends_group(Log_event *ev, int error) {
   }
   curr_group_seen_gtid = false;
 
+  this->table_def_get = false;
   DBUG_VOID_RETURN;
 }
 
@@ -1722,6 +1724,9 @@ int Slave_worker::slave_worker_exec_event(Log_event *ev) {
   set_master_log_pos(static_cast<ulong>(ev->common_header->log_pos));
   set_gaq_index(ev->mts_group_idx);
   ret = ev->do_apply_event_worker(this);
+  if (ret == 0 && ev->get_type_code() == binary_log::TABLE_MAP_EVENT && !this->table_def_get) {
+	  this->table_def_get = true;
+  }
   DBUG_RETURN(ret);
 }
 

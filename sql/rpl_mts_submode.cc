@@ -401,7 +401,22 @@ longlong Mts_submode_logical_clock::get_lwm_timestamp(Relay_log_info *rli,
 
   return last_lwm_timestamp;
 }
-
+/**
+   @param rli relay log info of coordinator
+   @return false as success,
+           true  when the error flag is raised or
+                 the caller thread is found killed.
+*/
+bool Mts_submode_logical_clock::wait_for_get_table_def(
+    Relay_log_info *rli){
+	//check all the workers , didn't all of them do_apply_event(Table_map_log_event);
+	for (Slave_worker **it = rli->workers.begin(); it != rli->workers.end();
+	     ++it) {
+	  Slave_worker *w_i = *it;
+//	  if (w_i->table_def_get == 0) return true;
+    }
+	return false;
+}
 /**
    The method implements logical timestamp conflict detection
    and resolution through waiting by the calling thread.
@@ -499,6 +514,7 @@ int Mts_submode_logical_clock::schedule_next_event(Relay_log_info *rli,
                                                    Log_event *ev) {
   longlong last_sequence_number = sequence_number;
   bool gap_successor = false;
+  bool online_ddl = false;
 
   DBUG_ENTER("Mts_submode_logical_clock::schedule_next_event");
   // We should check if the SQL thread was already killed before we schedule
@@ -520,6 +536,7 @@ int Mts_submode_logical_clock::schedule_next_event(Relay_log_info *rli,
           static_cast<Gtid_log_event *>(ev)->sequence_number;
       ptr_group->last_committed = last_committed =
           static_cast<Gtid_log_event *>(ev)->last_committed;
+      //online_ddl = static_cast<Gtid_log_event *>(ev)->online_ddl;
       break;
 
     default:
@@ -620,6 +637,9 @@ int Mts_submode_logical_clock::schedule_next_event(Relay_log_info *rli,
         At awakening set min_waited_timestamp to commit_parent in the
         subsequent GAQ index (could be NIL).
       */
+      if (online_ddl) {
+    	wait_for_get_table_def(rli);
+      } else {
       if (wait_for_last_committed_trx(rli, last_committed)) {
         /*
           MTS was waiting for a dependent transaction to finish but either it
@@ -637,6 +657,7 @@ int Mts_submode_logical_clock::schedule_next_event(Relay_log_info *rli,
       */
       if (gap_successor) last_lwm_timestamp = sequence_number - 1;
       DBUG_ASSERT(!clock_leq(sequence_number, estimate_lwm_timestamp()));
+      }
     }
 
     delegated_jobs++;

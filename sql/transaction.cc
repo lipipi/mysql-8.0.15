@@ -309,7 +309,7 @@ bool trans_commit(THD *thd, bool ignore_global_read_lock) {
   @retval true   Failure
 */
 
-bool trans_commit_implicit(THD *thd, bool ignore_global_read_lock) {
+bool trans_commit_implicit(THD *thd, bool ignore_global_read_lock, bool online_ddl) {
   bool res = false;
   DBUG_ENTER("trans_commit_implicit");
 
@@ -330,7 +330,7 @@ bool trans_commit_implicit(THD *thd, bool ignore_global_read_lock) {
     thd->server_status &=
         ~(SERVER_STATUS_IN_TRANS | SERVER_STATUS_IN_TRANS_READONLY);
     DBUG_PRINT("info", ("clearing SERVER_STATUS_IN_TRANS"));
-    res = ha_commit_trans(thd, true, ignore_global_read_lock);
+    res = ha_commit_trans(thd, true, ignore_global_read_lock, online_ddl);
   } else if (tc_log)
     res = tc_log->commit(thd, true);
 

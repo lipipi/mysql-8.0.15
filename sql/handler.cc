@@ -1528,7 +1528,7 @@ int commit_owned_gtid_by_partial_command(THD *thd) {
     TODO: This should be fixed in later ( >= 5.1) releases.
 */
 
-int ha_commit_trans(THD *thd, bool all, bool ignore_global_read_lock) {
+int ha_commit_trans(THD *thd, bool all, bool ignore_global_read_lock, bool online_ddl) {
   int error = 0;
   THD_STAGE_INFO(thd, stage_waiting_for_handler_commit);
   bool need_clear_owned_gtid = false;
@@ -1686,7 +1686,7 @@ int ha_commit_trans(THD *thd, bool all, bool ignore_global_read_lock) {
 
     xid_state->set_state(XID_STATE::XA_PREPARED);
   }
-  if (error || (error = tc_log->commit(thd, all))) {
+  if (error || (error = tc_log->commit(thd, all, online_ddl))) {
     ha_rollback_trans(thd, all);
     error = 1;
     goto end;

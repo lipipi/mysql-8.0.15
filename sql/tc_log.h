@@ -100,7 +100,7 @@ class TC_LOG {
 
      @return Error code on failure, zero on success.
    */
-  virtual enum_result commit(THD *thd, bool all) = 0;
+  virtual enum_result commit(THD *thd, bool all, bool online_ddl = false) = 0;
 
   /**
      Log a rollback record of the transaction to the transaction
@@ -137,7 +137,7 @@ class TC_LOG_DUMMY : public TC_LOG  // use it to disable the logging
   TC_LOG_DUMMY() {}
   int open(const char *) { return 0; }
   void close() {}
-  enum_result commit(THD *thd, bool all);
+  enum_result commit(THD *thd, bool all, bool online_ddl = false);
   int rollback(THD *thd, bool all);
   int prepare(THD *thd, bool all);
 };
@@ -192,7 +192,7 @@ class TC_LOG_MMAP : public TC_LOG {
   TC_LOG_MMAP() : inited(0) {}
   int open(const char *opt_name);
   void close();
-  enum_result commit(THD *thd, bool all);
+  enum_result commit(THD *thd, bool all, bool online_ddl = false);
   int rollback(THD *thd, bool all);
   int prepare(THD *thd, bool all);
   int recover();

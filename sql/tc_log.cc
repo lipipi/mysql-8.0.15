@@ -55,7 +55,7 @@
 #include "sql/xa.h"
 #include "thr_mutex.h"
 
-TC_LOG::enum_result TC_LOG_DUMMY::commit(THD *thd, bool all) {
+TC_LOG::enum_result TC_LOG_DUMMY::commit(THD *thd, bool all, bool online_ddl MY_ATTRIBUTE((unused))) {
   return ha_commit_low(thd, all) ? RESULT_ABORTED : RESULT_SUCCESS;
 }
 
@@ -286,7 +286,7 @@ void TC_LOG_MMAP::overflow() {
   and uses the functions that were there with the old interface to
   implement the logic.
  */
-TC_LOG::enum_result TC_LOG_MMAP::commit(THD *thd, bool all) {
+TC_LOG::enum_result TC_LOG_MMAP::commit(THD *thd, bool all, bool online_ddl MY_ATTRIBUTE((unused))) {
   DBUG_ENTER("TC_LOG_MMAP::commit");
   ulong cookie = 0;
   my_xid xid = thd->get_transaction()->xid_state()->get_xid()->get_my_xid();

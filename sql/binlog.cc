@@ -582,7 +582,7 @@ class binlog_cache_data {
   Binlog_cache_storage *get_cache() { return &m_cache; }
   int finalize(THD *thd, Log_event *end_event);
   int finalize(THD *thd, Log_event *end_event, XID_STATE *xs);
-  int flush(THD *thd, my_off_t *bytes, bool *wrote_xid);
+  int flush(THD *thd, my_off_t *bytes, bool *wrote_xid, bool online_ddl);
   int write_event(Log_event *event);
   size_t get_event_counter() { return event_counter; }
 
@@ -1074,14 +1074,14 @@ class binlog_cache_mngr {
                          be touched.
     @return Error code on error, zero if no error.
    */
-  int flush(THD *thd, my_off_t *bytes_written, bool *wrote_xid) {
+  int flush(THD *thd, my_off_t *bytes_written, bool *wrote_xid, bool online_ddl) {
     my_off_t stmt_bytes = 0;
     my_off_t trx_bytes = 0;
     DBUG_ASSERT(stmt_cache.has_xid() == 0);
-    int error = stmt_cache.flush(thd, &stmt_bytes, wrote_xid);
+    int error = stmt_cache.flush(thd, &stmt_bytes, wrote_xid, online_ddl);
     if (error) return error;
     DEBUG_SYNC(thd, "after_flush_stm_cache_before_flush_trx_cache");
-    if (int error = trx_cache.flush(thd, &trx_bytes, wrote_xid)) return error;
+    if (int error = trx_cache.flush(thd, &trx_bytes, wrote_xid, online_ddl)) return error;
     *bytes_written = stmt_bytes + trx_bytes;
     return 0;
   }
@@ -1458,7 +1458,7 @@ bool MYSQL_BIN_LOG::assign_automatic_gtids_to_flush_group(THD *first_seen) {
   @retval true Error.
 */
 bool MYSQL_BIN_LOG::write_gtid(THD *thd, binlog_cache_data *cache_data,
-                               Binlog_event_writer *writer) {
+                               Binlog_event_writer *writer, bool online_ddl) {
   DBUG_ENTER("MYSQL_BIN_LOG::write_gtid");
 
   /*
@@ -1606,8 +1606,8 @@ bool MYSQL_BIN_LOG::write_gtid(THD *thd, binlog_cache_data *cache_data,
   DBUG_PRINT("info",
              ("transaction_length= %llu", gtid_event.transaction_length));
 
-  if (0) {
-	  gtid_event.set_online_ddl(true);
+  if (online_ddl) {
+	  gtid_event.set_online_ddl();
   }
   bool ret = gtid_event.write(writer);
 
@@ -1751,7 +1751,7 @@ int binlog_cache_data::finalize(THD *thd, Log_event *end_event, XID_STATE *xs) {
   @see binlog_cache_data::finalize
  */
 int binlog_cache_data::flush(THD *thd, my_off_t *bytes_written,
-                             bool *wrote_xid) {
+                             bool *wrote_xid, bool online_ddl) {
   /*
     Doing a commit or a rollback including non-transactional tables,
     i.e., ending a transaction where we might write the transaction
@@ -1809,7 +1809,7 @@ int binlog_cache_data::flush(THD *thd, my_off_t *bytes_written,
     };);
 
     if (!error)
-      if ((error = mysql_bin_log.write_gtid(thd, this, &writer)))
+      if ((error = mysql_bin_log.write_gtid(thd, this, &writer, online_ddl)))
         thd->commit_error = THD::CE_FLUSH_ERROR;
     if (!error) error = mysql_bin_log.write_cache(thd, this, &writer);
 
@@ -7710,7 +7710,7 @@ int MYSQL_BIN_LOG::prepare(THD *thd, bool all) {
   @retval RESULT_ABORTED   error, transaction was neither logged nor committed
   @retval RESULT_INCONSISTENT  error, transaction was logged but not committed
 */
-TC_LOG::enum_result MYSQL_BIN_LOG::commit(THD *thd, bool all) {
+TC_LOG::enum_result MYSQL_BIN_LOG::commit(THD *thd, bool all, bool online_ddl) {
   DBUG_ENTER("MYSQL_BIN_LOG::commit");
   DBUG_PRINT("info",
              ("query='%s'", thd == current_thd ? thd->query().str : NULL));
@@ -7942,7 +7942,7 @@ TC_LOG::enum_result MYSQL_BIN_LOG::commit(THD *thd, bool all) {
       DBUG_RETURN(RESULT_ABORTED);
     }
 
-    if (ordered_commit(thd, all, skip_commit)) DBUG_RETURN(RESULT_INCONSISTENT);
+    if (ordered_commit(thd, all, skip_commit, online_ddl)) DBUG_RETURN(RESULT_INCONSISTENT);
 
     /*
       Mark the flag m_is_binlogged to true only after we are done
@@ -7980,11 +7980,11 @@ TC_LOG::enum_result MYSQL_BIN_LOG::commit(THD *thd, bool all) {
    The current "global" transaction_counter is stepped and its new value
    is assigned to the transaction.
  */
-std::pair<int, my_off_t> MYSQL_BIN_LOG::flush_thread_caches(THD *thd) {
+std::pair<int, my_off_t> MYSQL_BIN_LOG::flush_thread_caches(THD *thd, bool online_ddl) {
   binlog_cache_mngr *cache_mngr = thd_get_cache_mngr(thd);
   my_off_t bytes = 0;
   bool wrote_xid = false;
-  int error = cache_mngr->flush(thd, &bytes, &wrote_xid);
+  int error = cache_mngr->flush(thd, &bytes, &wrote_xid, online_ddl);
   if (!error && bytes > 0) {
     /*
       Note that set_trans_pos does not copy the file name. See
@@ -8014,7 +8014,7 @@ std::pair<int, my_off_t> MYSQL_BIN_LOG::flush_thread_caches(THD *thd) {
 
 int MYSQL_BIN_LOG::process_flush_stage_queue(my_off_t *total_bytes_var,
                                              bool *rotate_var,
-                                             THD **out_queue_var) {
+                                             THD **out_queue_var, bool online_ddl) {
   DBUG_ENTER("MYSQL_BIN_LOG::process_flush_stage_queue");
 #ifndef DBUG_OFF
   // number of flushes per group.
@@ -8043,7 +8043,7 @@ int MYSQL_BIN_LOG::process_flush_stage_queue(my_off_t *total_bytes_var,
   assign_automatic_gtids_to_flush_group(first_seen);
   /* Flush thread caches to binary log. */
   for (THD *head = first_seen; head; head = head->next_to_commit) {
-    std::pair<int, my_off_t> result = flush_thread_caches(head);
+    std::pair<int, my_off_t> result = flush_thread_caches(head, online_ddl);
     total_bytes += result.second;
     if (flush_error == 1) flush_error = result.first;
 #ifndef DBUG_OFF
@@ -8524,7 +8524,7 @@ void MYSQL_BIN_LOG::handle_binlog_flush_or_sync_error(THD *thd,
                be skipped (it is handled by the caller somehow) and @c
                false otherwise (the normal case).
  */
-int MYSQL_BIN_LOG::ordered_commit(THD *thd, bool all, bool skip_commit) {
+int MYSQL_BIN_LOG::ordered_commit(THD *thd, bool all, bool skip_commit, bool online_ddl) {
   DBUG_ENTER("MYSQL_BIN_LOG::ordered_commit");
   int flush_error = 0, sync_error = 0;
   my_off_t total_bytes = 0;
@@ -8614,7 +8614,7 @@ int MYSQL_BIN_LOG::ordered_commit(THD *thd, bool all, bool skip_commit) {
   }
   DEBUG_SYNC(thd, "waiting_in_the_middle_of_flush_stage");
   flush_error =
-      process_flush_stage_queue(&total_bytes, &do_rotate, &wait_queue);
+      process_flush_stage_queue(&total_bytes, &do_rotate, &wait_queue, online_ddl);
 
   if (flush_error == 0 && total_bytes > 0)
     flush_error = flush_cache_to_file(&flush_end_pos);

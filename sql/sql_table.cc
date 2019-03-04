@@ -12162,7 +12162,7 @@ static bool mysql_inplace_alter_table(
       */
       Disable_gtid_state_update_guard disabler(thd);
 
-      if (trans_commit_stmt(thd) || trans_commit_implicit(thd)) goto cleanup2;
+      if (trans_commit_stmt(thd) || trans_commit_implicit(thd, false, true)) goto cleanup2;
     }
   }
 
@@ -12280,7 +12280,7 @@ static bool mysql_inplace_alter_table(
       Commit ALTER TABLE. Needs to be done here and not in the callers
       (which do it anyway) to be able notify SE about changed table.
     */
-    if (trans_commit_stmt(thd) || trans_commit_implicit(thd)) goto cleanup2;
+    if (trans_commit_stmt(thd) || trans_commit_implicit(thd, false, true)) goto cleanup2;
 
     /* Call SE DDL post-commit hook. */
     if (db_type->post_ddl) db_type->post_ddl(thd);

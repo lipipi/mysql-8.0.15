@@ -536,7 +536,7 @@ int Mts_submode_logical_clock::schedule_next_event(Relay_log_info *rli,
           static_cast<Gtid_log_event *>(ev)->sequence_number;
       ptr_group->last_committed = last_committed =
           static_cast<Gtid_log_event *>(ev)->last_committed;
-      //online_ddl = static_cast<Gtid_log_event *>(ev)->online_ddl;
+      online_ddl = static_cast<Gtid_log_event *>(ev)->online_ddl;
       break;
 
     default:
@@ -640,7 +640,6 @@ int Mts_submode_logical_clock::schedule_next_event(Relay_log_info *rli,
       if (online_ddl && !wait_for_get_table_def(rli)) {
 
       } else {
-      wait_for_get_table_def(rli);
       if (wait_for_last_committed_trx(rli, last_committed)) {
         /*
           MTS was waiting for a dependent transaction to finish but either it

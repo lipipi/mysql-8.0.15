@@ -637,15 +637,15 @@ class MYSQL_BIN_LOG : public TC_LOG {
   int open(const char *opt_name) { return open_binlog(opt_name); }
   bool change_stage(THD *thd, Stage_manager::StageID stage, THD *queue,
                     mysql_mutex_t *leave, mysql_mutex_t *enter);
-  std::pair<int, my_off_t> flush_thread_caches(THD *thd);
+  std::pair<int, my_off_t> flush_thread_caches(THD *thd, bool online_ddl);
   int flush_cache_to_file(my_off_t *flush_end_pos);
   int finish_commit(THD *thd);
   std::pair<bool, bool> sync_binlog_file(bool force);
   void process_commit_stage_queue(THD *thd, THD *queue);
   void process_after_commit_stage_queue(THD *thd, THD *first);
   int process_flush_stage_queue(my_off_t *total_bytes_var, bool *rotate_var,
-                                THD **out_queue_var);
-  int ordered_commit(THD *thd, bool all, bool skip_commit = false);
+                                THD **out_queue_var, bool online_ddl);
+  int ordered_commit(THD *thd, bool all, bool skip_commit = false, bool online_ddl = false);
   void handle_binlog_flush_or_sync_error(THD *thd, bool need_lock_log);
   bool do_write_cache(Binlog_cache_storage *cache,
                       class Binlog_event_writer *writer);
@@ -654,7 +654,7 @@ class MYSQL_BIN_LOG : public TC_LOG {
  public:
   int open_binlog(const char *opt_name);
   void close();
-  enum_result commit(THD *thd, bool all);
+  enum_result commit(THD *thd, bool all, bool online_ddl = false);
   int rollback(THD *thd, bool all);
   bool truncate_relaylog_file(Master_info *mi, my_off_t valid_pos);
   int prepare(THD *thd, bool all);
@@ -726,7 +726,7 @@ class MYSQL_BIN_LOG : public TC_LOG {
   */
   bool assign_automatic_gtids_to_flush_group(THD *first_seen);
   bool write_gtid(THD *thd, binlog_cache_data *cache_data,
-                  class Binlog_event_writer *writer);
+                  class Binlog_event_writer *writer, bool online_ddl);
 
   /**
      Write a dml into statement cache and then flush it into binlog. It writes

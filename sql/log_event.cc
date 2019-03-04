@@ -12386,6 +12386,8 @@ uint32 Gtid_log_event::write_post_header_to_memory(uchar *buffer) {
   uchar gtid_flags = 0;
   gtid_flags |=
       may_have_sbr_stmts ? binary_log::Gtid_event::FLAG_MAY_HAVE_SBR : 0;
+  gtid_flags |=
+	  online_ddl ? binary_log::Gtid_event::FLAG_ONLINE_DDL : 0;
   *ptr_buffer = gtid_flags;
   ptr_buffer += ENCODED_FLAG_LENGTH;
 

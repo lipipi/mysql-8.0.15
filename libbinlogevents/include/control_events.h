@@ -806,6 +806,13 @@ class Gtid_event : public Binary_log_event {
   unsigned const char FLAG_MAY_HAVE_SBR = 1;
   /** Transaction might have changes logged with SBR */
   bool may_have_sbr_stmts;
+
+  unsigned const char FLAG_ONLINE_DDL = 2;
+  bool online_ddl;
+  void set_online_ddl() {
+	  online_ddl = true;
+  }
+
   /** Timestamp when the transaction was committed on the originating master. */
   unsigned long long int original_commit_timestamp;
   /** Timestamp when the transaction was committed on the nearest master. */
@@ -850,7 +857,9 @@ class Gtid_event : public Binary_log_event {
         immediate_commit_timestamp(immediate_commit_timestamp_arg),
         transaction_length(0),
         original_server_version(original_server_version_arg),
-        immediate_server_version(immediate_server_version_arg) {}
+        immediate_server_version(immediate_server_version_arg) {
+	  online_ddl = false;
+  }
 #ifndef HAVE_MYSYS
   // TODO(WL#7684): Implement the method print_event_info and print_long_info
   //               for all the events supported  in  MySQL Binlog

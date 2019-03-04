@@ -432,6 +432,7 @@ Gtid_event::Gtid_event(const char *buf, const Format_description_event *fde)
   unsigned char gtid_flags;
   READER_TRY_SET(gtid_flags, read<unsigned char>);
   may_have_sbr_stmts = gtid_flags & FLAG_MAY_HAVE_SBR;
+  online_ddl = gtid_flags & FLAG_ONLINE_DDL;
 
   READER_TRY_CALL(memcpy<unsigned char *>, Uuid_parent_struct.bytes,
                   Uuid_parent_struct.BYTE_LENGTH);

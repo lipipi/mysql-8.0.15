@@ -1606,6 +1606,9 @@ bool MYSQL_BIN_LOG::write_gtid(THD *thd, binlog_cache_data *cache_data,
   DBUG_PRINT("info",
              ("transaction_length= %llu", gtid_event.transaction_length));
 
+  if (0) {
+	  gtid_event.set_online_ddl(true);
+  }
   bool ret = gtid_event.write(writer);
 
   DBUG_RETURN(ret);

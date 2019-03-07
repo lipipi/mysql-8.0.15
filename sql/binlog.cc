@@ -576,9 +576,11 @@ class binlog_cache_data {
   }
 
   bool open(my_off_t cache_size, my_off_t max_cache_size) {
-    return m_cache.open(cache_size, max_cache_size);
+//	return m_cache.open(cache_size, max_cache_size);
+    return m_cache0.open(cache_size, max_cache_size) || m_cache.open(cache_size,max_cache_size);
   }
 
+  Binlog_cache_storage *get_cache0() { return &m_cache0; }
   Binlog_cache_storage *get_cache() { return &m_cache; }
   int finalize(THD *thd, Log_event *end_event);
   int finalize(THD *thd, Log_event *end_event, XID_STATE *xs);
@@ -588,6 +590,7 @@ class binlog_cache_data {
 
   virtual ~binlog_cache_data() {
     DBUG_ASSERT(is_binlog_empty());
+    m_cache0.close();
     m_cache.close();
   }
 
@@ -617,6 +620,7 @@ class binlog_cache_data {
   bool is_trx_cache() const { return flags.transactional; }
 
   my_off_t get_byte_position() const { return m_cache.length(); }
+//my_off_t get_byte_position() const { return m_cache0.length() + m_cache.length(); }
 
   void cache_state_checkpoint(my_off_t pos_to_checkpoint) {
     // We only need to store the cache state for pos > 0
@@ -665,7 +669,8 @@ class binlog_cache_data {
     compute_statistics();
     remove_pending_event();
 
-    if (m_cache.reset()) {
+//    if (m_cache.reset()) {
+    if (m_cache0.reset() || m_cache.reset()) {
       LogErr(WARNING_LEVEL, ER_BINLOG_CANT_RESIZE_CACHE);
     }
 
@@ -876,6 +881,11 @@ class binlog_cache_data {
   /*
     Storage for byte data. This binlog_cache_data will serialize
     events into bytes and put them into m_cache.
+  */
+  Binlog_cache_storage m_cache0;
+  /*
+	Storage for byte data. This binlog_cache_data will serialize
+	events into bytes and put them into m_cache.
   */
   Binlog_cache_storage m_cache;
 
@@ -1369,7 +1379,16 @@ int binlog_cache_data::write_event(Log_event *ev) {
     DBUG_EXECUTE_IF("simulate_disk_full_at_flush_pending",
                     { DBUG_SET("+d,simulate_file_write_error"); });
 
-    if (binary_event_serialize(ev, &m_cache)) {
+    Binlog_cache_storage *real_cache;
+    if (ev->get_type_code() == binary_log::TABLE_MAP_EVENT ||
+      (ev->get_type_code() == binary_log::QUERY_EVENT && ev->starts_group())){
+      real_cache = &m_cache0;
+    }else{
+      real_cache = &m_cache;
+    }
+
+//  if (binary_event_serialize(ev, &m_cache)) {
+    if (binary_event_serialize(ev, real_cache)) {
       DBUG_EXECUTE_IF("simulate_disk_full_at_flush_pending", {
         DBUG_SET("-d,simulate_file_write_error");
         DBUG_SET("-d,simulate_disk_full_at_flush_pending");
@@ -7245,6 +7264,7 @@ bool MYSQL_BIN_LOG::write_cache(THD *thd, binlog_cache_data *cache_data,
                                 Binlog_event_writer *writer) {
   DBUG_ENTER("MYSQL_BIN_LOG::write_cache(THD *, binlog_cache_data *, bool)");
 
+  Binlog_cache_storage *cache0 = cache_data->get_cache0();
   Binlog_cache_storage *cache = cache_data->get_cache();
   bool incident = cache_data->has_incident();
 
@@ -7263,13 +7283,15 @@ bool MYSQL_BIN_LOG::write_cache(THD *thd, binlog_cache_data *cache_data,
     */
     if (!cache->is_empty()) {
       DBUG_EXECUTE_IF("crash_before_writing_xid", {
-        if (do_write_cache(cache, writer))
+//		if (do_write_cache(cache, writer))
+        if (do_write_cache(cache0, writer)||do_write_cache(cache,writer))
           DBUG_PRINT("info", ("error writing binlog cache: %d", write_error));
         flush_and_sync(true);
         DBUG_PRINT("info", ("crashing before writing xid"));
         DBUG_SUICIDE();
       });
-      if (do_write_cache(cache, writer)) goto err;
+//    if (do_write_cache(cache, writer)) goto err;
+      if (do_write_cache(cache0, writer)||do_write_cache(cache,writer)) goto err;
 
       const char *err_msg =
           "Non-transactional changes did not get into "

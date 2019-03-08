@@ -5864,6 +5864,18 @@ int Xid_apply_log_event::do_apply_event_worker(Slave_worker *w) {
   int error = 0;
   bool skipped_commit_pos = true;
 
+  if (this->get_type_code() == binary_log::XID_EVENT) {
+	w->cleanup_context(thd, 0);
+	/* We are at end of the statement (STMT_END_F flag), lets clean
+	the memory which was used from thd's mem_root now.
+	This needs to be done only if we are here in SQL thread context.
+	In other flow ( in case of a regular thread which can happen
+	when the thread is applying BINLOG'...' row event) we should
+	*not* try to free the memory here. It will be done latter
+	in dispatch_command() after command execution is completed.
+	*/
+	if (thd->slave_thread) free_root(thd->mem_root, MYF(MY_KEEP_PREALLOC));
+  }
   lex_start(thd);
   mysql_reset_thd_for_next_command(thd);
   Slave_committed_queue *coordinator_gaq = w->c_rli->gaq;
@@ -9654,7 +9666,7 @@ end:
       *not* try to free the memory here. It will be done latter
       in dispatch_command() after command execution is completed.
      */
-    if (thd->slave_thread) free_root(thd->mem_root, MYF(MY_KEEP_PREALLOC));
+//    if (thd->slave_thread) free_root(thd->mem_root, MYF(MY_KEEP_PREALLOC));
   }
   DBUG_RETURN(error);
 }
@@ -9744,7 +9756,7 @@ static int rows_event_stmt_cleanup(Relay_log_info const *rli, THD *thd) {
     */
     thd->reset_current_stmt_binlog_format_row();
 
-    const_cast<Relay_log_info *>(rli)->cleanup_context(thd, 0);
+//    const_cast<Relay_log_info *>(rli)->cleanup_context(thd, 0);
 
     /*
       Clean sql_command value

@@ -599,7 +599,7 @@ class binlog_cache_data {
     DBUG_PRINT("debug", ("%s_cache - pending: 0x%llx, bytes: %llu",
                          (flags.transactional ? "trx" : "stmt"),
                          (ulonglong)pending(), (ulonglong)m_cache.length()));
-    return pending() == NULL && m_cache0.is_empty() && m_cache.is_empty();
+    return pending() == NULL && m_cache.is_empty();
   }
 
   bool is_finalized() const { return flags.finalized; }
@@ -795,20 +795,6 @@ class binlog_cache_data {
     // TODO: check the return value.
     (void)m_cache.truncate(pos);
   }
-  /*
-    It truncates the cache to a certain position. This includes deleting the
-    pending event. It corresponds to rollback statement or rollback to
-    a savepoint. It doesn't change transaction state.
-   */
-  void truncate(my_off_t pos0, my_off_t pos) {
-    DBUG_PRINT("info", ("truncating to position0 %lu", (ulong)pos0));
-    DBUG_PRINT("info", ("truncating to position %lu", (ulong)pos));
-    remove_pending_event();
-
-    // TODO: check the return value.
-    (void)m_cache0.truncate(pos0);
-    (void)m_cache.truncate(pos);
-  }
 
   /**
      Flush pending event to the cache buffer.
@@ -970,18 +956,14 @@ class binlog_trx_cache_data : public binlog_cache_data {
       : binlog_cache_data(trx_cache_arg, ptr_binlog_cache_use_arg,
                           ptr_binlog_cache_disk_use_arg),
         m_cannot_rollback(false),
-        before_stmt_pos0(MY_OFF_T_UNDEF),
         before_stmt_pos(MY_OFF_T_UNDEF) {}
 
   void reset() {
     DBUG_ENTER("reset");
-    DBUG_PRINT("enter", ("before_stmt_pos0: %llu", (ulonglong)before_stmt_pos0));
     DBUG_PRINT("enter", ("before_stmt_pos: %llu", (ulonglong)before_stmt_pos));
     m_cannot_rollback = false;
-    before_stmt_pos0 = MY_OFF_T_UNDEF;
     before_stmt_pos = MY_OFF_T_UNDEF;
     binlog_cache_data::reset();
-    DBUG_PRINT("return", ("before_stmt_pos0: %llu", (ulonglong)before_stmt_pos0));
     DBUG_PRINT("return", ("before_stmt_pos: %llu", (ulonglong)before_stmt_pos));
     DBUG_VOID_RETURN;
   }
@@ -989,17 +971,6 @@ class binlog_trx_cache_data : public binlog_cache_data {
   bool cannot_rollback() const { return m_cannot_rollback; }
 
   void set_cannot_rollback() { m_cannot_rollback = true; }
-
-  my_off_t get_prev_position0() const { return before_stmt_pos0; }
-
-  void set_prev_position0(my_off_t pos) {
-    DBUG_ENTER("set_prev_position0");
-    DBUG_PRINT("enter", ("before_stmt_pos0: %llu", (ulonglong)before_stmt_pos0));
-    before_stmt_pos0 = pos;
-    cache_state_checkpoint(before_stmt_pos0);
-    DBUG_PRINT("return", ("before_stmt_pos0: %llu", (ulonglong)before_stmt_pos0));
-    DBUG_VOID_RETURN;
-  }
 
   my_off_t get_prev_position() const { return before_stmt_pos; }
 
@@ -1015,10 +986,8 @@ class binlog_trx_cache_data : public binlog_cache_data {
   void restore_prev_position() {
     DBUG_ENTER("restore_prev_position");
     DBUG_PRINT("enter", ("before_stmt_pos: %llu", (ulonglong)before_stmt_pos));
-//    binlog_cache_data::truncate(before_stmt_pos);
-    binlog_cache_data::truncate(before_stmt_pos0,before_stmt_pos);
+    binlog_cache_data::truncate(before_stmt_pos);
     cache_state_rollback(before_stmt_pos);
-    before_stmt_pos0 = MY_OFF_T_UNDEF;
     before_stmt_pos = MY_OFF_T_UNDEF;
     /*
       Binlog statement rollback clears with_xid now as the atomic DDL statement
@@ -1050,10 +1019,6 @@ class binlog_trx_cache_data : public binlog_cache_data {
   */
   bool m_cannot_rollback;
 
-  /*
-    Binlog position before the start of the current statement.
-  */
-  my_off_t before_stmt_pos0;
   /*
     Binlog position before the start of the current statement.
   */
@@ -1217,31 +1182,6 @@ void check_binlog_stmt_cache_size(THD *thd) {
 */
 bool binlog_enabled() {
   return (binlog_hton && binlog_hton->slot != HA_SLOT_UNDEF);
-}
-
-/*
- Save position of binary log transaction cache.
-
- SYNPOSIS
-   binlog_trans_log_savepos()
-
-   thd      The thread to take the binlog data from
-   pos      Pointer to variable where the position will be stored
-
- DESCRIPTION
-
-   Save the current position in the binary log transaction cache into
-   the variable pointed to by 'pos'
-*/
-
-static void binlog_trans_log_savepos0(THD *thd, my_off_t *pos) {
-  DBUG_ENTER("binlog_trans_log_savepos");
-  DBUG_ASSERT(pos != NULL);
-  binlog_cache_mngr *const cache_mngr = thd_get_cache_mngr(thd);
-  DBUG_ASSERT(mysql_bin_log.is_open());
-  *pos = cache_mngr->trx_cache.get_byte_position0();
-  DBUG_PRINT("return", ("position: %lu", (ulong)*pos));
-  DBUG_VOID_RETURN;
 }
 
 /*
@@ -1682,7 +1622,7 @@ bool MYSQL_BIN_LOG::write_gtid(THD *thd, binlog_cache_data *cache_data,
       immediate_commit_timestamp, trx_original_server_version,
       trx_immediate_server_version);
   // Set the transaction length, based on cache info
-  gtid_event.set_trx_length_by_cache_size(cache_data->get_byte_position(),
+  gtid_event.set_trx_length_by_cache_size(cache_data->get_byte_position0() + cache_data->get_byte_position(),
                                           writer->is_checksum_enabled(),
                                           cache_data->get_event_counter());
   DBUG_PRINT("debug", ("cache_data->get_byte_position()= %llu",
@@ -1856,7 +1796,7 @@ int binlog_cache_data::flush(THD *thd, my_off_t *bytes_written,
   DBUG_PRINT("debug", ("flags.finalized: %s", YESNO(flags.finalized)));
   int error = 0;
   if (flags.finalized) {
-    my_off_t bytes_in_cache = m_cache.length();
+    my_off_t bytes_in_cache = m_cache0.length() + m_cache.length();
     Transaction_ctx *trn_ctx = thd->get_transaction();
 
     DBUG_PRINT("debug", ("bytes_in_cache: %llu", bytes_in_cache));
@@ -1961,7 +1901,7 @@ int binlog_trx_cache_data::truncate(THD *thd, bool all) {
     If rolling back a statement in a transaction, we truncate the
     transaction cache to remove the statement.
   */
-  else if (get_prev_position() != MY_OFF_T_UNDEF || get_prev_position() != MY_OFF_T_UNDEF)
+  else if (get_prev_position() != MY_OFF_T_UNDEF)
     restore_prev_position();
 
   thd->clear_binlog_table_maps();
@@ -2602,7 +2542,6 @@ int MYSQL_BIN_LOG::rollback(THD *thd, bool all) {
         statement-based replication is in use, the statement's changes
         in the trx-cache are preserved.
       */
-      cache_mngr->trx_cache.set_prev_position0(MY_OFF_T_UNDEF);
       cache_mngr->trx_cache.set_prev_position(MY_OFF_T_UNDEF);
     } else {
       /*
@@ -7989,7 +7928,6 @@ TC_LOG::enum_result MYSQL_BIN_LOG::commit(THD *thd, bool all, bool online_ddl) {
     This is part of the stmt rollback.
   */
   if (!all) {
-	cache_mngr->trx_cache.set_prev_position0(MY_OFF_T_UNDEF);
 	cache_mngr->trx_cache.set_prev_position(MY_OFF_T_UNDEF);
   }
 
@@ -9141,10 +9079,7 @@ void register_binlog_handler(THD *thd, bool trx) {
     /*
       Set an implicit savepoint in order to be able to truncate a trx-cache.
     */
-	DBUG_ASSERT(cache_mngr->trx_cache.get_prev_position0() == MY_OFF_T_UNDEF);
     my_off_t pos = 0;
-    binlog_trans_log_savepos0(thd, &pos);
-    cache_mngr->trx_cache.set_prev_position0(pos);
     binlog_trans_log_savepos(thd, &pos);
     cache_mngr->trx_cache.set_prev_position(pos);
 

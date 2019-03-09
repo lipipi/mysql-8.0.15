@@ -585,11 +585,12 @@ class binlog_cache_data {
   int finalize(THD *thd, Log_event *end_event);
   int finalize(THD *thd, Log_event *end_event, XID_STATE *xs);
   int flush(THD *thd, my_off_t *bytes, bool *wrote_xid, bool online_ddl);
-  int write_event(Log_event *event);
+  int write_event(Log_event *event, uint64_t table_id = 0);
   size_t get_event_counter() { return event_counter; }
 
   virtual ~binlog_cache_data() {
     DBUG_ASSERT(is_binlog_empty());
+    table_maps.clear();
     m_cache0.close();
     m_cache.close();
   }
@@ -673,6 +674,7 @@ class binlog_cache_data {
     if (m_cache0.reset() || m_cache.reset()) {
       LogErr(WARNING_LEVEL, ER_BINLOG_CANT_RESIZE_CACHE);
     }
+    table_maps.clear();
 
     flags.incident = false;
     flags.with_xid = false;
@@ -892,6 +894,7 @@ class binlog_cache_data {
   } flags;
 
  private:
+  std::set<uint64_t> table_maps;
   /*
     Storage for byte data. This binlog_cache_data will serialize
     events into bytes and put them into m_cache.
@@ -1432,7 +1435,7 @@ static int binlog_close_connection(handlerton *, THD *thd) {
   DBUG_RETURN(0);
 }
 
-int binlog_cache_data::write_event(Log_event *ev) {
+int binlog_cache_data::write_event(Log_event *ev, uint64_t table_id) {
   DBUG_ENTER("binlog_cache_data::write_event");
 
   if (ev != NULL) {
@@ -1440,8 +1443,16 @@ int binlog_cache_data::write_event(Log_event *ev) {
                     { DBUG_SET("+d,simulate_file_write_error"); });
 
     Binlog_cache_storage *real_cache;
-    if (ev->get_type_code() == binary_log::TABLE_MAP_EVENT ||
-      (ev->get_type_code() == binary_log::QUERY_EVENT && ev->starts_group())){
+    if (ev->get_type_code() == binary_log::TABLE_MAP_EVENT && table_id != 0){
+      std::set<uint64_t>::iterator it;
+      for (it = table_maps.begin();it != table_maps.end();it++) {
+		if (*it == table_id) {
+		  DBUG_RETURN(0);
+		}
+      }
+      table_maps.insert(table_id);
+      real_cache = &m_cache0;
+    } else if (ev->get_type_code() == binary_log::QUERY_EVENT && ev->starts_group()){
       real_cache = &m_cache0;
     }else{
       real_cache = &m_cache;
@@ -9287,7 +9298,7 @@ int THD::binlog_write_table_map(TABLE *table, bool is_transactional,
     if ((error = cache_data->write_event(&rows_query_ev))) DBUG_RETURN(error);
   }
 
-  if ((error = cache_data->write_event(&the_event))) DBUG_RETURN(error);
+  if ((error = cache_data->write_event(&the_event, table->s->table_map_id.id()))) DBUG_RETURN(error);
 
   binlog_table_maps++;
   DBUG_RETURN(0);

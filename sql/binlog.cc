@@ -580,8 +580,8 @@ class binlog_cache_data {
     return m_cache0.open(cache_size, max_cache_size) || m_cache.open(cache_size,max_cache_size);
   }
 
-  Binlog_cache_storage *get_cache0() { return &m_cache0; }
   Binlog_cache_storage *get_cache() { return &m_cache; }
+  int get_cache(Binlog_cache_storage **caches);
   int finalize(THD *thd, Log_event *end_event);
   int finalize(THD *thd, Log_event *end_event, XID_STATE *xs);
   int flush(THD *thd, my_off_t *bytes, bool *wrote_xid, bool online_ddl);
@@ -1705,6 +1705,13 @@ int MYSQL_BIN_LOG::gtid_end_transaction(THD *thd) {
   }
 
   DBUG_RETURN(0);
+}
+
+int binlog_cache_data::get_cache(Binlog_cache_storage **caches){
+	DBUG_ENTER("binlog_cache_data::get_cache");
+	caches[0] = &m_cache;
+	caches[1] = NULL;
+	DBUG_RETURN(1);
 }
 
 /**
@@ -7421,8 +7428,9 @@ bool MYSQL_BIN_LOG::write_cache(THD *thd, binlog_cache_data *cache_data,
                                 Binlog_event_writer *writer) {
   DBUG_ENTER("MYSQL_BIN_LOG::write_cache(THD *, binlog_cache_data *, bool)");
 
-  Binlog_cache_storage *cache0 = cache_data->get_cache0();
-  Binlog_cache_storage *cache = cache_data->get_cache();
+  Binlog_cache_storage *caches[2];
+  int caches_num = cache_data->get_cache(caches);
+
   bool incident = cache_data->has_incident();
 
   mysql_mutex_assert_owner(&LOCK_log);
@@ -7438,26 +7446,22 @@ bool MYSQL_BIN_LOG::write_cache(THD *thd, binlog_cache_data *cache_data,
       there is anything in the cache (see @note in comment above this
       function). Check if we can replace this by an assertion. /Sven
     */
-	if (!cache0->is_empty()) {
-	  DBUG_EXECUTE_IF("crash_before_writing_xid", {
-		if (do_write_cache(cache0, writer))
-		  DBUG_PRINT("info", ("error writing binlog cache: %d", write_error));
-		flush_and_sync(true);
-		DBUG_PRINT("info", ("crashing before writing xid"));
-		DBUG_SUICIDE();
-	  });
-	  if (do_write_cache(cache0, writer)) goto err;
-	}
+  bool is_empty = true;
+  for (int i = 0;i<caches_num;i++){
+    Binlog_cache_storage *cache = caches[i];
     if (!cache->is_empty()) {
+      is_empty = false;
       DBUG_EXECUTE_IF("crash_before_writing_xid", {
-		if (do_write_cache(cache, writer))
-          DBUG_PRINT("info", ("error writing binlog cache: %d", write_error));
-        flush_and_sync(true);
-        DBUG_PRINT("info", ("crashing before writing xid"));
-        DBUG_SUICIDE();
+      if (do_write_cache(cache, writer))
+        DBUG_PRINT("info", ("error writing binlog cache: %d", write_error));
+      flush_and_sync(true);
+      DBUG_PRINT("info", ("crashing before writing xid"));
+      DBUG_SUICIDE();
       });
       if (do_write_cache(cache, writer)) goto err;
-
+    }
+  }
+    if (!is_empty) {
       const char *err_msg =
           "Non-transactional changes did not get into "
           "the binlog.";

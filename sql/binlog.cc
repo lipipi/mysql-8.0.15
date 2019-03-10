@@ -620,7 +620,6 @@ class binlog_cache_data {
 
   bool is_trx_cache() const { return flags.transactional; }
 
-  my_off_t get_byte_position0() const { return m_cache0.length(); }
   my_off_t get_byte_position() const { return m_cache.length(); }
 
   void cache_state_checkpoint(my_off_t pos_to_checkpoint) {
@@ -670,11 +669,9 @@ class binlog_cache_data {
     compute_statistics();
     remove_pending_event();
 
-//    if (m_cache.reset()) {
-    if (m_cache0.reset() || m_cache.reset()) {
+    if (m_cache.reset()) {
       LogErr(WARNING_LEVEL, ER_BINLOG_CANT_RESIZE_CACHE);
     }
-    table_maps.clear();
 
     flags.incident = false;
     flags.with_xid = false;
@@ -879,19 +876,20 @@ class binlog_cache_data {
     bool with_content : 1;
   } flags;
 
- private:
   std::set<uint64_t> table_maps;
   /*
     Storage for byte data. This binlog_cache_data will serialize
     events into bytes and put them into m_cache.
   */
   Binlog_cache_storage m_cache0;
+
   /*
 	Storage for byte data. This binlog_cache_data will serialize
 	events into bytes and put them into m_cache.
   */
   Binlog_cache_storage m_cache;
 
+ private:
   /*
     Pending binrows event. This event is the event where the rows are currently
     written.
@@ -958,11 +956,17 @@ class binlog_trx_cache_data : public binlog_cache_data {
         m_cannot_rollback(false),
         before_stmt_pos(MY_OFF_T_UNDEF) {}
 
+  my_off_t get_byte_position() const { return m_cache0.length() + m_cache.length(); }
+
   void reset() {
     DBUG_ENTER("reset");
     DBUG_PRINT("enter", ("before_stmt_pos: %llu", (ulonglong)before_stmt_pos));
     m_cannot_rollback = false;
     before_stmt_pos = MY_OFF_T_UNDEF;
+    table_maps.clear();
+    if (m_cache0.reset()) {
+      LogErr(WARNING_LEVEL, ER_BINLOG_CANT_RESIZE_CACHE);
+    }
     binlog_cache_data::reset();
     DBUG_PRINT("return", ("before_stmt_pos: %llu", (ulonglong)before_stmt_pos));
     DBUG_VOID_RETURN;
@@ -1008,9 +1012,13 @@ class binlog_trx_cache_data : public binlog_cache_data {
     DBUG_VOID_RETURN;
   }
 
+  int flush(THD *thd, my_off_t *bytes_written, bool *wrote_xid, bool online_ddl);
+
   using binlog_cache_data::truncate;
 
   int truncate(THD *thd, bool all);
+
+  int write_event(Log_event *event, uint64_t table_id = 0);
 
  private:
   /*
@@ -1375,31 +1383,14 @@ static int binlog_close_connection(handlerton *, THD *thd) {
   DBUG_RETURN(0);
 }
 
-int binlog_cache_data::write_event(Log_event *ev, uint64_t table_id) {
+int binlog_cache_data::write_event(Log_event *ev, uint64_t table_id MY_ATTRIBUTE((unused))) {
   DBUG_ENTER("binlog_cache_data::write_event");
 
   if (ev != NULL) {
     DBUG_EXECUTE_IF("simulate_disk_full_at_flush_pending",
                     { DBUG_SET("+d,simulate_file_write_error"); });
 
-    Binlog_cache_storage *real_cache;
-    if (ev->get_type_code() == binary_log::TABLE_MAP_EVENT && table_id != 0){
-      std::set<uint64_t>::iterator it;
-      for (it = table_maps.begin();it != table_maps.end();it++) {
-		if (*it == table_id) {
-		  DBUG_RETURN(0);
-		}
-      }
-      table_maps.insert(table_id);
-      real_cache = &m_cache0;
-    } else if (ev->get_type_code() == binary_log::QUERY_EVENT && ev->starts_group()){
-      real_cache = &m_cache0;
-    }else{
-      real_cache = &m_cache;
-    }
-
-//  if (binary_event_serialize(ev, &m_cache)) {
-    if (binary_event_serialize(ev, real_cache)) {
+    if (binary_event_serialize(ev, &m_cache)) {
       DBUG_EXECUTE_IF("simulate_disk_full_at_flush_pending", {
         DBUG_SET("-d,simulate_file_write_error");
         DBUG_SET("-d,simulate_disk_full_at_flush_pending");
@@ -1622,7 +1613,7 @@ bool MYSQL_BIN_LOG::write_gtid(THD *thd, binlog_cache_data *cache_data,
       immediate_commit_timestamp, trx_original_server_version,
       trx_immediate_server_version);
   // Set the transaction length, based on cache info
-  gtid_event.set_trx_length_by_cache_size(cache_data->get_byte_position0() + cache_data->get_byte_position(),
+  gtid_event.set_trx_length_by_cache_size(cache_data->get_byte_position(),
                                           writer->is_checksum_enabled(),
                                           cache_data->get_event_counter());
   DBUG_PRINT("debug", ("cache_data->get_byte_position()= %llu",
@@ -1796,6 +1787,100 @@ int binlog_cache_data::flush(THD *thd, my_off_t *bytes_written,
   DBUG_PRINT("debug", ("flags.finalized: %s", YESNO(flags.finalized)));
   int error = 0;
   if (flags.finalized) {
+    my_off_t bytes_in_cache = m_cache.length();
+    Transaction_ctx *trn_ctx = thd->get_transaction();
+
+    DBUG_PRINT("debug", ("bytes_in_cache: %llu", bytes_in_cache));
+
+    trn_ctx->sequence_number = mysql_bin_log.m_dependency_tracker.step();
+
+    /*
+      In case of two caches the transaction is split into two groups.
+      The 2nd group is considered to be a successor of the 1st rather
+      than to have a common commit parent with it.
+      Notice that due to a simple method of detection that the current is
+      the 2nd cache being flushed, the very first few transactions may be logged
+      sequentially (a next one is tagged as if a preceding one is its
+      commit parent).
+    */
+    if (trn_ctx->last_committed == SEQ_UNINIT)
+      trn_ctx->last_committed = trn_ctx->sequence_number - 1;
+
+    /*
+      The GTID is written prior to flushing the statement cache, if
+      the transaction has written to the statement cache; and prior to
+      flushing the transaction cache if the transaction has written to
+      the transaction cache.  If GTIDs are enabled, then transactional
+      and non-transactional updates cannot be mixed, so at most one of
+      the caches can be non-empty, so just one GTID will be
+      generated. If GTIDs are disabled, then no GTID is generated at
+      all; if both the transactional cache and the statement cache are
+      non-empty then we get two Anonymous_gtid_log_events, which is
+      correct.
+    */
+    Binlog_event_writer writer(mysql_bin_log.get_binlog_file());
+
+    /* The GTID ownership process might set the commit_error */
+    error = (thd->commit_error == THD::CE_FLUSH_ERROR);
+
+    DBUG_EXECUTE_IF("simulate_binlog_flush_error", {
+      if (rand() % 3 == 0) {
+        thd->commit_error = THD::CE_FLUSH_ERROR;
+      }
+    };);
+
+    if (!error)
+      if ((error = mysql_bin_log.write_gtid(thd, this, &writer, online_ddl)))
+        thd->commit_error = THD::CE_FLUSH_ERROR;
+    if (!error) error = mysql_bin_log.write_cache(thd, this, &writer);
+
+    if (flags.with_xid && error == 0) *wrote_xid = true;
+
+    /*
+      Reset have to be after the if above, since it clears the
+      with_xid flag
+    */
+    reset();
+    if (bytes_written) *bytes_written = bytes_in_cache;
+  }
+  DBUG_ASSERT(!flags.finalized);
+  DBUG_RETURN(error);
+}
+
+/**
+  Flush caches to the binary log.
+
+  If the cache is finalized, the cache will be flushed to the binary
+  log file. If the cache is not finalized, nothing will be done.
+
+  If flushing fails for any reason, an error will be reported and the
+  cache will be reset. Flushing can fail in two circumstances:
+
+  - It was not possible to write the cache to the file. In this case,
+    it does not make sense to keep the cache.
+
+  - The cache was successfully written to disk but post-flush actions
+    (such as binary log rotation) failed. In this case, the cache is
+    already written to disk and there is no reason to keep it.
+
+  @see binlog_cache_data::finalize
+ */
+int binlog_trx_cache_data::flush(THD *thd, my_off_t *bytes_written,
+                             bool *wrote_xid, bool online_ddl) {
+  /*
+    Doing a commit or a rollback including non-transactional tables,
+    i.e., ending a transaction where we might write the transaction
+    cache to the binary log.
+
+    We can always end the statement when ending a transaction since
+    transactions are not allowed inside stored functions. If they
+    were, we would have to ensure that we're not ending a statement
+    inside a stored function.
+  */
+  DBUG_ENTER("binlog_cache_data::flush");
+  DBUG_PRINT("debug", ("flags.finalized: %s", YESNO(flags.finalized)));
+  int error = 0;
+  if (flags.finalized) {
     my_off_t bytes_in_cache = m_cache0.length() + m_cache.length();
     Transaction_ctx *trn_ctx = thd->get_transaction();
 
@@ -1907,6 +1992,67 @@ int binlog_trx_cache_data::truncate(THD *thd, bool all) {
   thd->clear_binlog_table_maps();
 
   DBUG_RETURN(error);
+}
+
+int binlog_trx_cache_data::write_event(Log_event *ev, uint64_t table_id) {
+  DBUG_ENTER("binlog_cache_data::write_event");
+
+  if (ev != NULL) {
+    DBUG_EXECUTE_IF("simulate_disk_full_at_flush_pending",
+                    { DBUG_SET("+d,simulate_file_write_error"); });
+
+    Binlog_cache_storage *real_cache;
+    if (ev->get_type_code() == binary_log::TABLE_MAP_EVENT && table_id != 0){
+      std::set<uint64_t>::iterator it;
+      for (it = table_maps.begin();it != table_maps.end();it++) {
+		if (*it == table_id) {
+		  DBUG_RETURN(0);
+		}
+      }
+      table_maps.insert(table_id);
+      real_cache = &m_cache0;
+    } else if (ev->get_type_code() == binary_log::QUERY_EVENT && ev->starts_group()){
+      if(m_cache0.length() == 0){
+    	real_cache = &m_cache0;
+      } else {
+    	DBUG_RETURN(0);
+      }
+    }else{
+      real_cache = &m_cache;
+    }
+
+//  if (binary_event_serialize(ev, &m_cache)) {
+    if (binary_event_serialize(ev, real_cache)) {
+      DBUG_EXECUTE_IF("simulate_disk_full_at_flush_pending", {
+        DBUG_SET("-d,simulate_file_write_error");
+        DBUG_SET("-d,simulate_disk_full_at_flush_pending");
+        /*
+           after +d,simulate_file_write_error the local cache
+           is in unsane state. Since -d,simulate_file_write_error
+           revokes the first simulation do_write_cache()
+           can't be run without facing an assert.
+           So it's blocked with the following 2nd simulation:
+        */
+        DBUG_SET("+d,simulate_do_write_cache_failure");
+      });
+      DBUG_RETURN(1);
+    }
+    if (ev->get_type_code() == binary_log::XID_EVENT) flags.with_xid = true;
+    if (ev->is_using_immediate_logging()) flags.immediate = true;
+    /* DDL gets marked as xid-requiring at its caching. */
+    if (is_atomic_ddl_event(ev)) flags.with_xid = true;
+    /* With respect to the event type being written */
+    if (ev->is_sbr_logging_format()) flags.with_sbr = true;
+    if (ev->is_rbr_logging_format()) flags.with_rbr = true;
+    /* With respect to empty transactions */
+    if (ev->starts_group()) flags.with_start = true;
+    if (ev->ends_group()) flags.with_end = true;
+    if (!ev->starts_group() && !ev->ends_group()) flags.with_content = true;
+    event_counter++;
+    DBUG_PRINT("debug",
+               ("event_counter= %lu", static_cast<ulong>(event_counter)));
+  }
+  DBUG_RETURN(0);
 }
 
 inline enum xa_option_words get_xa_opt(THD *thd) {
@@ -7292,17 +7438,25 @@ bool MYSQL_BIN_LOG::write_cache(THD *thd, binlog_cache_data *cache_data,
       there is anything in the cache (see @note in comment above this
       function). Check if we can replace this by an assertion. /Sven
     */
+	if (!cache0->is_empty()) {
+	  DBUG_EXECUTE_IF("crash_before_writing_xid", {
+		if (do_write_cache(cache0, writer))
+		  DBUG_PRINT("info", ("error writing binlog cache: %d", write_error));
+		flush_and_sync(true);
+		DBUG_PRINT("info", ("crashing before writing xid"));
+		DBUG_SUICIDE();
+	  });
+	  if (do_write_cache(cache0, writer)) goto err;
+	}
     if (!cache->is_empty()) {
       DBUG_EXECUTE_IF("crash_before_writing_xid", {
-//		if (do_write_cache(cache, writer))
-        if (do_write_cache(cache0, writer)||do_write_cache(cache,writer))
+		if (do_write_cache(cache, writer))
           DBUG_PRINT("info", ("error writing binlog cache: %d", write_error));
         flush_and_sync(true);
         DBUG_PRINT("info", ("crashing before writing xid"));
         DBUG_SUICIDE();
       });
-//    if (do_write_cache(cache, writer)) goto err;
-      if (do_write_cache(cache0, writer)||do_write_cache(cache,writer)) goto err;
+      if (do_write_cache(cache, writer)) goto err;
 
       const char *err_msg =
           "Non-transactional changes did not get into "

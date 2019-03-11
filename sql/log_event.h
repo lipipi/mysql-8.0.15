@@ -1649,6 +1649,7 @@ class Xid_apply_log_event : public Log_event {
   virtual bool ends_group() const override { return true; }
 #if defined(MYSQL_SERVER)
   virtual enum_skip_reason do_shall_skip(Relay_log_info *rli) override;
+  virtual bool clear(Relay_log_info *rli);
   virtual int do_apply_event(Relay_log_info const *rli) override;
   virtual int do_apply_event_worker(Slave_worker *rli) override;
   virtual bool do_commit(THD *thd_arg) = 0;
@@ -1673,6 +1674,7 @@ class Xid_log_event : public binary_log::Xid_event, public Xid_apply_log_event {
   ~Xid_log_event() override {}
   size_t get_data_size() override { return sizeof(xid); }
 #ifdef MYSQL_SERVER
+  bool clear(Relay_log_info *rli) override;
   bool write(Basic_ostream *ostream) override;
 #endif
  private:

@@ -5856,23 +5856,21 @@ bool Xid_log_event::do_commit(THD *thd_arg) {
   return error;
 }
 
-bool Xid_apply_log_event::clear(Relay_log_info *rli MY_ATTRIBUTE((unused))) {
-	return(false);
+int Xid_apply_log_event::clear(Relay_log_info *rli MY_ATTRIBUTE((unused))) {
+	return(0);
 }
-bool Xid_log_event::clear(Relay_log_info *rli) {
-  if (this->get_type_code() == binary_log::XID_EVENT) {
-	rli->cleanup_context(thd, false);
-	/* We are at end of the statement (STMT_END_F flag), lets clean
-	the memory which was used from thd's mem_root now.
-	This needs to be done only if we are here in SQL thread context.
-	In other flow ( in case of a regular thread which can happen
-	when the thread is applying BINLOG'...' row event) we should
-	*not* try to free the memory here. It will be done latter
-	in dispatch_command() after command execution is completed.
-	*/
-	if (thd->slave_thread) free_root(thd->mem_root, MYF(MY_KEEP_PREALLOC));
-  }
-  return(true);
+int Xid_log_event::clear(Relay_log_info *rli) {
+  rli->cleanup_context(thd, false);
+  /* We are at end of the statement (STMT_END_F flag), lets clean
+  the memory which was used from thd's mem_root now.
+  This needs to be done only if we are here in SQL thread context.
+  In other flow ( in case of a regular thread which can happen
+  when the thread is applying BINLOG'...' row event) we should
+  *not* try to free the memory here. It will be done latter
+  in dispatch_command() after command execution is completed.
+  */
+  if (thd->slave_thread) free_root(thd->mem_root, MYF(MY_KEEP_PREALLOC));
+  return(0);
 }
 
 /**
@@ -5885,11 +5883,16 @@ bool Xid_log_event::clear(Relay_log_info *rli) {
 int Xid_apply_log_event::do_apply_event_worker(Slave_worker *w) {
   int error = 0;
   bool skipped_commit_pos = true;
+  Slave_committed_queue *coordinator_gaq = NULL;
+  ulong gaq_idx = 0ul;
+  Slave_job_group *ptr_group = NULL;
 
-  clear(w);
+  if ((error = clear(w))) {
+	  goto err;
+  }
   lex_start(thd);
   mysql_reset_thd_for_next_command(thd);
-  Slave_committed_queue *coordinator_gaq = w->c_rli->gaq;
+  coordinator_gaq = w->c_rli->gaq;
 
   /* For a slave Xid_log_event is COMMIT */
   query_logger.general_log_print(thd, COM_QUERY,
@@ -5906,8 +5909,8 @@ int Xid_apply_log_event::do_apply_event_worker(Slave_worker *w) {
                   sql_print_information("Crashing crash_before_update_pos.");
                   DBUG_SUICIDE(););
 
-  ulong gaq_idx = mts_group_idx;
-  Slave_job_group *ptr_group = coordinator_gaq->get_job_group(gaq_idx);
+  gaq_idx = mts_group_idx;
+  ptr_group = coordinator_gaq->get_job_group(gaq_idx);
 
   if (!thd->get_transaction()->xid_state()->check_in_xa(false) &&
       w->is_transactional()) {

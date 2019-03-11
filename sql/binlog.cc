@@ -947,10 +947,10 @@ class binlog_trx_cache_data : public binlog_cache_data {
         before_stmt_pos(MY_OFF_T_UNDEF) {}
 
   ~binlog_trx_cache_data() {
-	DBUG_ASSERT(is_binlog_empty());
+	DBUG_ASSERT(is_binlog_empty() && m_cache0.is_empty());
 	table_maps.clear();
 	m_cache0.close();
-	m_cache.close();
+//	m_cache.close();
   }
 
   my_off_t get_byte_position_raw() const { return m_cache.length(); }

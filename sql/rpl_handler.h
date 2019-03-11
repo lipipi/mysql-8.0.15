@@ -157,7 +157,7 @@ class Trans_delegate : public Delegate {
   typedef Trans_observer Observer;
 
   int before_dml(THD *thd, int &result);
-  int before_commit(THD *thd, bool all, Binlog_cache_storage *trx_cache_log,
+  int before_commit(THD *thd, bool all, Binlog_cache_storage *trx_cache_log0, Binlog_cache_storage *trx_cache_log,
                     Binlog_cache_storage *stmt_cache_log,
                     ulonglong cache_log_max_size, bool is_atomic_ddl);
   int before_rollback(THD *thd, bool all);

@@ -147,6 +147,7 @@ typedef struct Trans_param {
   /*
     Set on before_commit hook.
   */
+  Binlog_cache_storage *trx_cache_log0;
   Binlog_cache_storage *trx_cache_log;
   Binlog_cache_storage *stmt_cache_log;
   ulonglong cache_log_max_size;

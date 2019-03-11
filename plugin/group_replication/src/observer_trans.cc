@@ -295,12 +295,14 @@ int group_replication_trans_before_commit(Trans_param *param) {
   */
   bool is_dml = !param->is_atomic_ddl;
   bool may_have_sbr_stmts = !is_dml;
+  Binlog_cache_storage *cache_log0 = NULL;
   Binlog_cache_storage *cache_log = NULL;
   my_off_t cache_log_position = 0;
-  const my_off_t trx_cache_log_position = param->trx_cache_log->length();
+  const my_off_t trx_cache_log_position = param->trx_cache_log0->length() + param->trx_cache_log->length();
   const my_off_t stmt_cache_log_position = param->stmt_cache_log->length();
 
   if (trx_cache_log_position > 0 && stmt_cache_log_position == 0) {
+	cache_log0 = param->trx_cache_log0;
     cache_log = param->trx_cache_log;
     cache_log_position = trx_cache_log_position;
   } else if (trx_cache_log_position == 0 && stmt_cache_log_position > 0) {
@@ -436,7 +438,7 @@ int group_replication_trans_before_commit(Trans_param *param) {
   }
 
   // Copy binlog cache content to buffer.
-  if (cache_log->copy_to(transaction_msg)) {
+  if (cache_log0->copy_to(transaction_msg) || cache_log->copy_to(transaction_msg + cache_log0->length())) {
     /* purecov: begin inspected */
     LogPluginErr(ERROR_LEVEL, ER_GRP_RPL_WRITE_TO_TRANSACTION_MESSAGE_FAILED,
                  param->thread_id);

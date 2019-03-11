@@ -580,6 +580,7 @@ class binlog_cache_data {
     return m_cache0.open(cache_size, max_cache_size) || m_cache.open(cache_size,max_cache_size);
   }
 
+  Binlog_cache_storage *get_cache0() { return &m_cache0; }
   Binlog_cache_storage *get_cache() { return &m_cache; }
   int get_cache(Binlog_cache_storage **caches);
   int finalize(THD *thd, Log_event *end_event);
@@ -1062,6 +1063,7 @@ class binlog_cache_mngr {
   }
 
   Binlog_cache_storage *get_stmt_cache() { return stmt_cache.get_cache(); }
+  Binlog_cache_storage *get_trx_cache0() { return trx_cache.get_cache0(); }
   Binlog_cache_storage *get_trx_cache() { return trx_cache.get_cache(); }
   /**
     Convenience method to check if both caches are empty.
@@ -2714,7 +2716,7 @@ int MYSQL_BIN_LOG::rollback(THD *thd, bool all) {
   if (error == 0 && stuff_logged) {
     if (RUN_HOOK(
             transaction, before_commit,
-            (thd, all, thd_get_cache_mngr(thd)->get_trx_cache(),
+            (thd, all, thd_get_cache_mngr(thd)->get_trx_cache0(), thd_get_cache_mngr(thd)->get_trx_cache(),
              thd_get_cache_mngr(thd)->get_stmt_cache(),
              max<my_off_t>(max_binlog_cache_size, max_binlog_stmt_cache_size),
              false))) {
@@ -8102,7 +8104,7 @@ TC_LOG::enum_result MYSQL_BIN_LOG::commit(THD *thd, bool all, bool online_ddl) {
   if (stmt_stuff_logged || trx_stuff_logged) {
     if (RUN_HOOK(
             transaction, before_commit,
-            (thd, all, thd_get_cache_mngr(thd)->get_trx_cache(),
+            (thd, all, thd_get_cache_mngr(thd)->get_trx_cache0(), thd_get_cache_mngr(thd)->get_trx_cache(),
              thd_get_cache_mngr(thd)->get_stmt_cache(),
              max<my_off_t>(max_binlog_cache_size, max_binlog_stmt_cache_size),
              is_atomic_ddl)) ||

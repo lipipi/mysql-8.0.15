@@ -310,7 +310,8 @@ void delegates_destroy() {
   if (!plugins.empty()) plugin_unlock_list(0, &plugins[0], plugins.size());
 
 int Trans_delegate::before_commit(THD *thd, bool all,
-                                  Binlog_cache_storage *trx_cache_log,
+								  Binlog_cache_storage *trx_cache_log0,
+								  Binlog_cache_storage *trx_cache_log,
                                   Binlog_cache_storage *stmt_cache_log,
                                   ulonglong cache_log_max_size,
                                   bool is_atomic_ddl_arg) {
@@ -323,6 +324,7 @@ int Trans_delegate::before_commit(THD *thd, bool all,
   param.gtid_info.type = thd->variables.gtid_next.type;
   param.gtid_info.sidno = thd->variables.gtid_next.gtid.sidno;
   param.gtid_info.gno = thd->variables.gtid_next.gtid.gno;
+  param.trx_cache_log0 = trx_cache_log0;
   param.trx_cache_log = trx_cache_log;
   param.stmt_cache_log = stmt_cache_log;
   param.cache_log_max_size = cache_log_max_size;

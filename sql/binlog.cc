@@ -575,24 +575,20 @@ class binlog_cache_data {
     flags.transactional = trx_cache_arg;
   }
 
-  bool open(my_off_t cache_size, my_off_t max_cache_size) {
-//	return m_cache.open(cache_size, max_cache_size);
-    return m_cache0.open(cache_size, max_cache_size) || m_cache.open(cache_size,max_cache_size);
+  virtual bool open(my_off_t cache_size, my_off_t max_cache_size) {
+	return m_cache.open(cache_size, max_cache_size);
   }
 
-  Binlog_cache_storage *get_cache0() { return &m_cache0; }
   Binlog_cache_storage *get_cache() { return &m_cache; }
-  int get_cache(Binlog_cache_storage **caches);
+  virtual int get_caches(Binlog_cache_storage **caches);
   int finalize(THD *thd, Log_event *end_event);
   int finalize(THD *thd, Log_event *end_event, XID_STATE *xs);
-  int flush(THD *thd, my_off_t *bytes, bool *wrote_xid, bool online_ddl);
-  int write_event(Log_event *event, uint64_t table_id = 0);
+  virtual int flush(THD *thd, my_off_t *bytes, bool *wrote_xid, bool online_ddl);
+  virtual int write_event(Log_event *event, uint64_t table_id = 0);
   size_t get_event_counter() { return event_counter; }
 
   virtual ~binlog_cache_data() {
     DBUG_ASSERT(is_binlog_empty());
-    table_maps.clear();
-    m_cache0.close();
     m_cache.close();
   }
 
@@ -621,7 +617,7 @@ class binlog_cache_data {
 
   bool is_trx_cache() const { return flags.transactional; }
 
-  my_off_t get_byte_position() const { return m_cache.length(); }
+  virtual my_off_t get_byte_position() const { return m_cache.length(); }
 
   void cache_state_checkpoint(my_off_t pos_to_checkpoint) {
     // We only need to store the cache state for pos > 0
@@ -877,13 +873,6 @@ class binlog_cache_data {
     bool with_content : 1;
   } flags;
 
-  std::set<uint64_t> table_maps;
-  /*
-    Storage for byte data. This binlog_cache_data will serialize
-    events into bytes and put them into m_cache.
-  */
-  Binlog_cache_storage m_cache0;
-
   /*
 	Storage for byte data. This binlog_cache_data will serialize
 	events into bytes and put them into m_cache.
@@ -957,7 +946,24 @@ class binlog_trx_cache_data : public binlog_cache_data {
         m_cannot_rollback(false),
         before_stmt_pos(MY_OFF_T_UNDEF) {}
 
+  ~binlog_trx_cache_data() {
+	DBUG_ASSERT(is_binlog_empty());
+	table_maps.clear();
+	m_cache0.close();
+	m_cache.close();
+  }
+
+  my_off_t get_byte_position_raw() const { return m_cache.length(); }
   my_off_t get_byte_position() const { return m_cache0.length() + m_cache.length(); }
+
+  Binlog_cache_storage *get_cache0() { return &m_cache0; }
+
+  int get_caches(Binlog_cache_storage **caches) {
+	DBUG_ENTER("binlog_trx_cache_data::get_cache");
+	caches[0] = &m_cache0;
+	caches[1] = &m_cache;
+	DBUG_RETURN(2);
+  }
 
   void reset() {
     DBUG_ENTER("reset");
@@ -971,6 +977,10 @@ class binlog_trx_cache_data : public binlog_cache_data {
     binlog_cache_data::reset();
     DBUG_PRINT("return", ("before_stmt_pos: %llu", (ulonglong)before_stmt_pos));
     DBUG_VOID_RETURN;
+  }
+
+  bool open(my_off_t cache_size, my_off_t max_cache_size) {
+    return m_cache0.open(cache_size, max_cache_size) || m_cache.open(cache_size,max_cache_size);
   }
 
   bool cannot_rollback() const { return m_cannot_rollback; }
@@ -1022,6 +1032,14 @@ class binlog_trx_cache_data : public binlog_cache_data {
   int write_event(Log_event *event, uint64_t table_id = 0);
 
  private:
+
+  std::set<uint64_t> table_maps;
+  /*
+    Storage for byte data. This binlog_cache_data will serialize
+    events into bytes and put them into m_cache.
+  */
+  Binlog_cache_storage m_cache0;
+
   /*
     It will be set true if any statement which cannot be rolled back safely
     is put in trx_cache.
@@ -1214,7 +1232,7 @@ static void binlog_trans_log_savepos(THD *thd, my_off_t *pos) {
   DBUG_ASSERT(pos != NULL);
   binlog_cache_mngr *const cache_mngr = thd_get_cache_mngr(thd);
   DBUG_ASSERT(mysql_bin_log.is_open());
-  *pos = cache_mngr->trx_cache.get_byte_position();
+  *pos = cache_mngr->trx_cache.get_byte_position_raw();
   DBUG_PRINT("return", ("position: %lu", (ulong)*pos));
   cache_mngr->trx_cache.cache_state_checkpoint(*pos);
   DBUG_VOID_RETURN;
@@ -1709,7 +1727,7 @@ int MYSQL_BIN_LOG::gtid_end_transaction(THD *thd) {
   DBUG_RETURN(0);
 }
 
-int binlog_cache_data::get_cache(Binlog_cache_storage **caches){
+int binlog_cache_data::get_caches(Binlog_cache_storage **caches){
 	DBUG_ENTER("binlog_cache_data::get_cache");
 	caches[0] = &m_cache;
 	caches[1] = NULL;
@@ -7431,7 +7449,7 @@ bool MYSQL_BIN_LOG::write_cache(THD *thd, binlog_cache_data *cache_data,
   DBUG_ENTER("MYSQL_BIN_LOG::write_cache(THD *, binlog_cache_data *, bool)");
 
   Binlog_cache_storage *caches[2];
-  int caches_num = cache_data->get_cache(caches);
+  int caches_num = cache_data->get_caches(caches);
 
   bool incident = cache_data->has_incident();
 

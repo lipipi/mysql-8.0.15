@@ -4321,6 +4321,9 @@ int Query_log_event::do_apply_event(Relay_log_info const *rli,
   DBUG_PRINT("info", ("query=%s, q_len_arg=%lu", query,
                       static_cast<unsigned long>(q_len_arg)));
 
+  if (strncmp(query, "SAVEPOINT", strlen("SAVEPOINT")) == 0) {
+	DBUG_RETURN(0);
+  }
   /*
     Colleagues: please never free(thd->catalog) in MySQL. This would
     lead to bugs as here thd->catalog is a part of an alloced block,
@@ -9694,7 +9697,7 @@ Log_event::enum_skip_reason Rows_log_event::do_shall_skip(Relay_log_info *rli) {
    @retval  non-zero  Error at the commit.
  */
 
-static int rows_event_stmt_cleanup(Relay_log_info const *rli, THD *thd) {
+static int rows_event_stmt_cleanup(Relay_log_info const *rli  MY_ATTRIBUTE((unused)), THD *thd) {
   DBUG_ENTER("rows_event_stmt_cleanup");
   DBUG_EXECUTE_IF("simulate_rows_event_cleanup_failure", {
     char errbuf[MYSQL_ERRMSG_SIZE];

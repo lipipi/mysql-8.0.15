@@ -2430,6 +2430,7 @@ class Seperator_log_event : public binary_log::Binary_log_event,
             const Format_description_event *description_event)
   			  : binary_log::Binary_log_event(&buf, description_event),
   		      Log_event(header(), footer()){}
+
 #ifndef MYSQL_SERVER
   virtual void print(FILE *file, PRINT_EVENT_INFO *print_event_info) const;
 #endif
@@ -2438,10 +2439,10 @@ class Seperator_log_event : public binary_log::Binary_log_event,
   Seperator_log_event(THD *thd_arg)
     :binary_log::Binary_log_event(binary_log::SEPERATOR_EVENT),
     Log_event(thd_arg, 0, Log_event::EVENT_TRANSACTIONAL_CACHE,
-    		Log_event::EVENT_NORMAL_LOGGING, header(), footer()){}
+    		Log_event::EVENT_NORMAL_LOGGING, header(), footer()) {}
 
+  bool write(Basic_ostream *ostream) override;
 #endif
-
  private:
 #if defined(MYSQL_SERVER)
   virtual int do_apply_event(Relay_log_info const *rli MY_ATTRIBUTE((unused))) override { return 0; }

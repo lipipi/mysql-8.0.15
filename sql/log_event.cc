@@ -10485,6 +10485,16 @@ int Seperator_log_event::do_update_pos(Relay_log_info *rli) {
   rli->inc_event_relay_log_pos();
   return 0;
 }
+
+bool Seperator_log_event::write(Basic_ostream *ostream) {
+  DBUG_EXECUTE_IF("do_not_write_xid", return 0;);
+//  return (write_header(ostream, 0) ||
+//            write_footer(ostream));
+  uint64 i = 0;
+  return (write_header(ostream, sizeof(i)) ||
+          wrapper_my_b_safe_write(ostream, (uchar *)&i, sizeof(i)) ||
+          write_footer(ostream));
+}
 #endif  // MYSQL_SERVER
 
 #ifndef MYSQL_SERVER

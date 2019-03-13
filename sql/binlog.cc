@@ -1045,7 +1045,8 @@ class binlog_trx_cache_data : public binlog_cache_data {
 
   bool add_seperator;
 
-  std::set<uint64_t> table_maps;
+  typedef std::set<uint64_t> Table_id_set;
+  Table_id_set table_maps;
   /*
     Storage for byte data. This binlog_cache_data will serialize
     events into bytes and put them into m_cache.

@@ -874,6 +874,8 @@ const char *Log_event::get_type_str(Log_event_type type) {
       return "Format_desc";
     case binary_log::TABLE_MAP_EVENT:
       return "Table_map";
+    case binary_log::SEPERATOR_EVENT:
+      return "Seperator";
     case binary_log::WRITE_ROWS_EVENT_V1:
       return "Write_rows_v1";
     case binary_log::UPDATE_ROWS_EVENT_V1:

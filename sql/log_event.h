@@ -2431,6 +2431,7 @@ class Seperator_log_event : public binary_log::Binary_log_event,
   			  : binary_log::Binary_log_event(&buf, description_event),
   		      Log_event(header(), footer()){}
 
+  static my_off_t get_log_event_size() { return LOG_EVENT_HEADER_LEN + sizeof(uint64); }
 #ifndef MYSQL_SERVER
   virtual void print(FILE *file, PRINT_EVENT_INFO *print_event_info) const;
 #endif

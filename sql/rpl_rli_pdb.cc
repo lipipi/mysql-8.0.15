@@ -1724,7 +1724,7 @@ int Slave_worker::slave_worker_exec_event(Log_event *ev) {
   set_master_log_pos(static_cast<ulong>(ev->common_header->log_pos));
   set_gaq_index(ev->mts_group_idx);
   ret = ev->do_apply_event_worker(this);
-  if (ret == 0 && ev->get_type_code() == binary_log::TABLE_MAP_EVENT && !this->table_def_get) {
+  if (ret == 0 && ev->get_type_code() == binary_log::SEPERATOR_EVENT && !this->table_def_get) {
 	  this->table_def_get = true;
   }
   DBUG_RETURN(ret);

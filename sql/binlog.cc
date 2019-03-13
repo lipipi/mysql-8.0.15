@@ -955,16 +955,15 @@ class binlog_trx_cache_data : public binlog_cache_data {
   }
 
   my_off_t get_byte_position_raw() const { return m_cache.length(); }
-  my_off_t get_byte_position() const { return m_cache0.length() + 19 + m_cache.length(); }
+  my_off_t get_byte_position() const { return m_cache0.length() + Seperator_log_event::get_log_event_size() + m_cache.length(); }
 
   Binlog_cache_storage *get_cache0() { return &m_cache0; }
 
   void add_a_seperator_event(THD *thd_arg){
-	if (!add_seperator) {
-		add_seperator = true;
-		Seperator_log_event the_event(thd_arg);
-		this->write_event(&the_event);
-	}
+	DBUG_ASSERT(add_seperator == false);
+	add_seperator = true;
+	Seperator_log_event the_event(thd_arg);
+	this->write_event(&the_event);
   }
 
   int get_caches(Binlog_cache_storage **caches, THD *thd_arg) {
@@ -984,6 +983,7 @@ class binlog_trx_cache_data : public binlog_cache_data {
     if (m_cache0.reset()) {
       LogErr(WARNING_LEVEL, ER_BINLOG_CANT_RESIZE_CACHE);
     }
+    add_seperator = false;
     binlog_cache_data::reset();
     DBUG_PRINT("return", ("before_stmt_pos: %llu", (ulonglong)before_stmt_pos));
     DBUG_VOID_RETURN;

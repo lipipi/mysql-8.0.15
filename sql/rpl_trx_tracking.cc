@@ -213,6 +213,8 @@ void Writeset_trx_dependency_tracker::get_dependency(THD *thd,
       thd->get_transaction()->get_transaction_write_set_ctx();
   std::vector<uint64> *writeset = write_set_ctx->get_write_set();
 
+  uint64_t table_id = 0;
+
 #ifndef DBUG_OFF
   /* The writeset of an empty transaction must be empty. */
   if (is_empty_transaction_in_binlog_cache(thd))
@@ -268,6 +270,8 @@ void Writeset_trx_dependency_tracker::get_dependency(THD *thd,
         if (!exceeds_capacity)
           m_writeset_history.insert(
               std::pair<uint64, int64>(*it, sequence_number));
+          m_table_writeset.insert(
+        	  std::pair<uint64_t, uint64>(table_id, *it));
       }
     }
 
@@ -288,13 +292,28 @@ void Writeset_trx_dependency_tracker::get_dependency(THD *thd,
 
   if (exceeds_capacity || !can_use_writesets) {
     m_writeset_history_start = sequence_number;
-    m_writeset_history.clear();
+    if (exceeds_capacity) {
+      m_writeset_history.clear();
+      m_table_writeset.clear();
+    } else {
+      std::cout<<m_table_writeset.count(table_id);
+      auto ptr = m_table_writeset.equal_range(table_id);
+      if (ptr.first != std::end(m_table_writeset)) {
+    	  for (auto iter = ptr.first ; iter != ptr.second ; ++iter) {
+    		  m_writeset_history.erase(iter->second);
+    		  m_table_writeset.erase(iter);
+    	  }
+      }
+//      m_writeset_history.clear();
+//      m_table_writeset.clear();
+    }
   }
 }
 
 void Writeset_trx_dependency_tracker::rotate(int64 start) {
   m_writeset_history_start = start;
   m_writeset_history.clear();
+  m_table_writeset.clear();
 }
 
 /**

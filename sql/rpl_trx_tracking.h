@@ -157,6 +157,9 @@ class Writeset_trx_dependency_tracker {
   */
   typedef std::map<uint64, int64> Writeset_history;
   Writeset_history m_writeset_history;
+
+  typedef std::multimap<uint64_t, uint64> Table_writeset;
+  Table_writeset m_table_writeset;
 };
 
 /**

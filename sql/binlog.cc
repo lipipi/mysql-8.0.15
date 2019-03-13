@@ -955,7 +955,7 @@ class binlog_trx_cache_data : public binlog_cache_data {
   }
 
   my_off_t get_byte_position_raw() const { return m_cache.length(); }
-  my_off_t get_byte_position() const { return m_cache0.length() + m_cache.length(); }
+  my_off_t get_byte_position() const { return m_cache0.length() + 19 + m_cache.length(); }
 
   Binlog_cache_storage *get_cache0() { return &m_cache0; }
 
@@ -2041,22 +2041,24 @@ int binlog_trx_cache_data::write_event(Log_event *ev, uint64_t table_id) {
                     { DBUG_SET("+d,simulate_file_write_error"); });
 
     Binlog_cache_storage *real_cache;
-    if (ev->get_type_code() == binary_log::TABLE_MAP_EVENT && table_id != 0){
-      std::set<uint64_t>::iterator it;
-      for (it = table_maps.begin();it != table_maps.end();it++) {
-		if (*it == table_id) {
-		  DBUG_RETURN(0);
-		}
-      }
-      table_maps.insert(table_id);
-      real_cache = &m_cache0;
-    } else if (ev->get_type_code() == binary_log::QUERY_EVENT && ev->starts_group()){
+    if (ev->get_type_code() == binary_log::QUERY_EVENT && ev->starts_group()){
       if(m_cache0.length() == 0){
     	real_cache = &m_cache0;
       } else {
     	DBUG_RETURN(0);
       }
-    }else{
+    } else if (ev->get_type_code() == binary_log::TABLE_MAP_EVENT && table_id != 0){
+	  std::set<uint64_t>::iterator it;
+	  for (it = table_maps.begin();it != table_maps.end();it++) {
+		if (*it == table_id) {
+	     DBUG_RETURN(0);
+	   }
+	  }
+	  table_maps.insert(table_id);
+	  real_cache = &m_cache0;
+    } else if (ev->get_type_code() == binary_log::SEPERATOR_EVENT) {
+      real_cache = &m_cache0;
+    } else {
       real_cache = &m_cache;
     }
 

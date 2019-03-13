@@ -2440,9 +2440,6 @@ class Seperator_log_event : public binary_log::Binary_log_event,
     Log_event(thd_arg, 0, Log_event::EVENT_TRANSACTIONAL_CACHE,
     		Log_event::EVENT_NORMAL_LOGGING, header(), footer()){}
 
-//  virtual bool write_data_header(Basic_ostream *ostream) override;
-//  virtual bool write_data_body(Basic_ostream *ostream) override;
-
 #endif
 
  private:

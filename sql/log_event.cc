@@ -10493,7 +10493,6 @@ void Seperator_log_event::print(FILE *,
   if (!print_event_info->short_form) {
     print_header(&print_event_info->head_cache, print_event_info, true);
     my_b_printf(&print_event_info->head_cache, "a seperator_log_event");
-    print_base64(&print_event_info->body_cache, print_event_info, true);
   }
 }
 #endif

@@ -2404,6 +2404,54 @@ class Table_map_log_event : public binary_log::Table_map_event,
   class Column_charset_iterator;
 #endif
 };
+/**
+  @class Seperator_log_event
+
+  Seperator_log_event which
+
+  @internal
+  The inheritance structure in the current design for the classes is
+  as follows:
+
+    Binary_log_event  Log_event
+                \       /
+                 \     /
+                  \   /
+           Seperator_log_event
+  @endinternal
+*/
+class Seperator_log_event : public binary_log::Binary_log_event,
+							public Log_event {
+ public:
+  /** Constants */
+  enum { TYPE_CODE = binary_log::SEPERATOR_EVENT };
+
+  Seperator_log_event(const char *buf,
+            const Format_description_event *description_event)
+  			  : binary_log::Binary_log_event(&buf, description_event),
+  		      Log_event(header(), footer()){}
+#ifndef MYSQL_SERVER
+  virtual void print(FILE *file, PRINT_EVENT_INFO *print_event_info) const;
+#endif
+
+#ifdef MYSQL_SERVER
+  Seperator_log_event(THD *thd_arg)
+    :binary_log::Binary_log_event(binary_log::SEPERATOR_EVENT),
+    Log_event(thd_arg, 0, Log_event::EVENT_TRANSACTIONAL_CACHE,
+    		Log_event::EVENT_NORMAL_LOGGING, header(), footer()){}
+
+//  virtual bool write_data_header(Basic_ostream *ostream) override;
+//  virtual bool write_data_body(Basic_ostream *ostream) override;
+
+#endif
+
+ private:
+#if defined(MYSQL_SERVER)
+  virtual int do_apply_event(Relay_log_info const *rli MY_ATTRIBUTE((unused))) override { return 0; }
+  virtual int do_update_pos(Relay_log_info *rli) override;
+#endif
+
+};
 
 #ifdef HAVE_PSI_STAGE_INTERFACE
 /*

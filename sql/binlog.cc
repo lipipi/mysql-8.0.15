@@ -580,7 +580,7 @@ class binlog_cache_data {
   }
 
   Binlog_cache_storage *get_cache() { return &m_cache; }
-  virtual int get_caches(Binlog_cache_storage **caches);
+  virtual int get_caches(Binlog_cache_storage **caches, THD *thd);
   int finalize(THD *thd, Log_event *end_event);
   int finalize(THD *thd, Log_event *end_event, XID_STATE *xs);
   virtual int flush(THD *thd, my_off_t *bytes, bool *wrote_xid, bool online_ddl);
@@ -943,6 +943,7 @@ class binlog_trx_cache_data : public binlog_cache_data {
                         ulong *ptr_binlog_cache_disk_use_arg)
       : binlog_cache_data(trx_cache_arg, ptr_binlog_cache_use_arg,
                           ptr_binlog_cache_disk_use_arg),
+		add_seperator(false),
         m_cannot_rollback(false),
         before_stmt_pos(MY_OFF_T_UNDEF) {}
 
@@ -958,8 +959,17 @@ class binlog_trx_cache_data : public binlog_cache_data {
 
   Binlog_cache_storage *get_cache0() { return &m_cache0; }
 
-  int get_caches(Binlog_cache_storage **caches) {
+  void add_a_seperator_event(THD *thd_arg){
+	if (!add_seperator) {
+		add_seperator = true;
+		Seperator_log_event the_event(thd_arg);
+		this->write_event(&the_event);
+	}
+  }
+
+  int get_caches(Binlog_cache_storage **caches, THD *thd_arg) {
 	DBUG_ENTER("binlog_trx_cache_data::get_cache");
+	this->add_a_seperator_event(thd_arg);
 	caches[0] = &m_cache0;
 	caches[1] = &m_cache;
 	DBUG_RETURN(2);
@@ -1032,6 +1042,8 @@ class binlog_trx_cache_data : public binlog_cache_data {
   int write_event(Log_event *event, uint64_t table_id = 0);
 
  private:
+
+  bool add_seperator;
 
   std::set<uint64_t> table_maps;
   /*
@@ -1727,7 +1739,7 @@ int MYSQL_BIN_LOG::gtid_end_transaction(THD *thd) {
   DBUG_RETURN(0);
 }
 
-int binlog_cache_data::get_caches(Binlog_cache_storage **caches){
+int binlog_cache_data::get_caches(Binlog_cache_storage **caches, THD *thd_arg MY_ATTRIBUTE((unused))){
 	DBUG_ENTER("binlog_cache_data::get_cache");
 	caches[0] = &m_cache;
 	caches[1] = NULL;
@@ -7449,7 +7461,7 @@ bool MYSQL_BIN_LOG::write_cache(THD *thd, binlog_cache_data *cache_data,
   DBUG_ENTER("MYSQL_BIN_LOG::write_cache(THD *, binlog_cache_data *, bool)");
 
   Binlog_cache_storage *caches[2];
-  int caches_num = cache_data->get_caches(caches);
+  int caches_num = cache_data->get_caches(caches, thd);
 
   bool incident = cache_data->has_incident();
 

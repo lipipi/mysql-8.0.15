@@ -10480,6 +10480,25 @@ static inline bool write_tlv_field(
 }
 #endif  // MYSQL_SERVER
 
+#if defined(MYSQL_SERVER)
+int Seperator_log_event::do_update_pos(Relay_log_info *rli) {
+  rli->inc_event_relay_log_pos();
+  return 0;
+}
+#endif  // MYSQL_SERVER
+
+#ifndef MYSQL_SERVER
+void Seperator_log_event::print(FILE *,
+                                PRINT_EVENT_INFO *print_event_info) const {
+  if (!print_event_info->short_form) {
+    print_header(&print_event_info->head_cache, print_event_info, true);
+    my_b_printf(&print_event_info->head_cache, "a seperator_log_event");
+    print_base64(&print_event_info->body_cache, print_event_info, true);
+  }
+}
+#endif
+
+
 #ifndef MYSQL_SERVER
 // For MYSQL_SERVER, the version in field.h is used.
 static inline bool is_numeric_type(uint type) {

@@ -295,6 +295,8 @@ enum Log_event_type {
 
   TABLE_MAP_EVENT = 19,
 
+  SEPERATOR_EVENT = 20,
+
   /**
     The V1 event numbers are used from 5.1.16 until mysql-5.6.
   */

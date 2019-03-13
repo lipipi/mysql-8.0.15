@@ -249,6 +249,9 @@ Binlog_read_error::Error_type binlog_event_deserialize(
       if (!(fde->post_header_len.empty()))
         ev = new Table_map_log_event(buf, fde);
       break;
+    case binary_log::SEPERATOR_EVENT:
+      ev = new Seperator_log_event(buf, fde);
+      break;
     case binary_log::BEGIN_LOAD_QUERY_EVENT:
       ev = new Begin_load_query_log_event(buf, fde);
       break;

@@ -298,9 +298,7 @@ void Writeset_trx_dependency_tracker::get_dependency(THD *thd,
       m_writeset_history.clear();
       m_table_writeset.clear();
     } else {
-      TABLE *table;
-	  for (table = thd->open_tables; table; table = table->next) {
-		table_id = table->s->table_map_id.id();//get the old table_id or do nothing
+		table_id = thd->old_table_id;//get the old table_id or do nothing
 		std::pair<std::multimap<uint64_t,uint64>::iterator,std::multimap<uint64_t,uint64>::iterator> ptr = m_table_writeset.equal_range(table_id);
 		if (ptr.first != std::end(m_table_writeset)) {
 		  for (std::multimap<uint64_t,uint64>::iterator iter = ptr.first ; iter != ptr.second ; ++iter) {
@@ -308,7 +306,6 @@ void Writeset_trx_dependency_tracker::get_dependency(THD *thd,
 			  m_table_writeset.erase(iter);
 		  }
 		}
-	  }
     }
   }
 }

@@ -15312,6 +15312,7 @@ bool mysql_alter_table(THD *thd, const char *new_db, const char *new_name,
       goto err_new_table_cleanup;
   }
 
+  thd->old_table_id = table->s->table_map_id.id();
   if (alter_info->requested_algorithm !=
       Alter_info::ALTER_TABLE_ALGORITHM_COPY) {
     Alter_inplace_info ha_alter_info(create_info, alter_info,
@@ -16133,6 +16134,7 @@ end_inplace_noop:
 
 end_inplace:
 
+  thd->old_table_id = 0;
   fk_invalidator.invalidate(thd);
 
   if (alter_ctx.is_table_renamed())

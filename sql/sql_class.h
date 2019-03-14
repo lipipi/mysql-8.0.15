@@ -769,6 +769,7 @@ class THD : public MDL_context_owner,
   }
 
  public:
+  uint64_t old_table_id;
   MDL_context mdl_context;
 
   /*

@@ -50,13 +50,13 @@ Rpl_transaction_write_set_ctx::Rpl_transaction_write_set_ctx()
   DBUG_VOID_RETURN;
 }
 
-void Rpl_transaction_write_set_ctx::add_write_set(uint64 hash) {
+void Rpl_transaction_write_set_ctx::add_write_set(uint64 hash,  uint64_t table_id) {
   DBUG_ENTER("Transaction_context_log_event::add_write_set");
-  write_set.push_back(hash);
+  write_set.push_back(std::pair<uint64,uint64_t>(hash, table_id));
   DBUG_VOID_RETURN;
 }
 
-std::vector<uint64> *Rpl_transaction_write_set_ctx::get_write_set() {
+std::vector<std::pair<uint64,uint64_t>> *Rpl_transaction_write_set_ctx::get_write_set() {
   DBUG_ENTER("Transaction_context_log_event::add_write_set");
   DBUG_RETURN(&write_set);
 }
@@ -121,10 +121,10 @@ Transaction_write_set *get_transaction_write_set(unsigned long m_thread_id) {
         key_memory_write_set_extraction,
         write_set_size * sizeof(unsigned long long), MYF(0));
     int result_set_index = 0;
-    for (std::vector<uint64>::iterator it =
+    for (std::vector<std::pair<uint64,uint64_t>>::iterator it =
              transaction_write_set_ctx->get_write_set()->begin();
          it != transaction_write_set_ctx->get_write_set()->end(); ++it) {
-      uint64 temp = *it;
+      uint64 temp = it->first;
       result_set->write_set[result_set_index++] = temp;
     }
     mysql_mutex_unlock(&thd->LOCK_thd_data);

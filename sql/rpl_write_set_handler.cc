@@ -405,22 +405,23 @@ static void debug_check_for_write_sets(
   @param[in] thd - THD object pointing to current thread.
 */
 
-static void generate_hash_pke(const std::string &pke, THD *thd) {
+static void generate_hash_pke(const std::string &pke, THD *thd, uint64_t table_id) {
   DBUG_ENTER("generate_hash_pke");
   DBUG_ASSERT(thd->variables.transaction_write_set_extraction !=
               HASH_ALGORITHM_OFF);
 
   uint64 hash = calc_hash<const char *>(
       thd->variables.transaction_write_set_extraction, pke.c_str(), pke.size());
-  thd->get_transaction()->get_transaction_write_set_ctx()->add_write_set(hash);
+  thd->get_transaction()->get_transaction_write_set_ctx()->add_write_set(hash, table_id);
 
-  DBUG_PRINT("info", ("pke: %s; hash: %llu", pke.c_str(), hash));
+  DBUG_PRINT("info", ("pke: %s; hash: %llu", pke.c_str(), hash, table_id));
   DBUG_VOID_RETURN;
 }
 
 void add_pke(TABLE *table, THD *thd, uchar *record) {
   DBUG_ENTER("add_pke");
   DBUG_ASSERT(record == table->record[0] || record == table->record[1]);
+  uint64_t table_id = table->s->table_map_id.id();
   /*
     The next section extracts the primary key equivalent of the rows that are
     changing during the current transaction.
@@ -529,7 +530,7 @@ void add_pke(TABLE *table, THD *thd, uchar *record) {
             insert into t1 values (2, 2, NULL); => this is allowed.
       */
       if (i == table->key_info[key_number].user_defined_key_parts) {
-        generate_hash_pke(pke, thd);
+        generate_hash_pke(pke, thd, table_id);
         writeset_hashes_added = true;
 
 #ifndef DBUG_OFF
@@ -600,7 +601,7 @@ void add_pke(TABLE *table, THD *thd, uchar *record) {
             pke_prefix.append(HASH_STRING_SEPARATOR);
             pke_prefix.append(std::to_string(length));
 
-            generate_hash_pke(pke_prefix, thd);
+            generate_hash_pke(pke_prefix, thd, table_id);
             writeset_hashes_added = true;
 
 #ifndef DBUG_OFF

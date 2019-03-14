@@ -48,13 +48,13 @@ class Rpl_transaction_write_set_ctx {
 
     @param[in] hash - the uint64 type hash value of the PKE.
   */
-  void add_write_set(uint64 hash);
+  void add_write_set(uint64 hash, uint64_t table_id);
 
   /*
     Function to get the pointer of the write set vector in the
     transaction_ctx object.
   */
-  std::vector<uint64> *get_write_set();
+  std::vector<std::pair<uint64,uint64_t>> *get_write_set();
 
   /*
     Cleanup function of the vector which stores the PKE.
@@ -124,7 +124,7 @@ class Rpl_transaction_write_set_ctx {
   void restore_savepoint_list();
 
  private:
-  std::vector<uint64> write_set;
+  std::vector<std::pair<uint64, uint64_t>> write_set;
   bool m_has_missing_keys;
   bool m_has_related_foreign_keys;
 

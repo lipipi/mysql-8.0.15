@@ -211,7 +211,7 @@ void Writeset_trx_dependency_tracker::get_dependency(THD *thd,
                                                      int64 &commit_parent) {
   Rpl_transaction_write_set_ctx *write_set_ctx =
       thd->get_transaction()->get_transaction_write_set_ctx();
-  std::vector<uint64> *writeset = write_set_ctx->get_write_set();
+  std::vector<std::pair<uint64,uint64_t>> *writeset = write_set_ctx->get_write_set();
 
   uint64_t table_id = 0;
 
@@ -258,20 +258,22 @@ void Writeset_trx_dependency_tracker::get_dependency(THD *thd,
      transaction's row hashes to the history.
     */
     int64 last_parent = m_writeset_history_start;
-    for (std::vector<uint64>::iterator it = writeset->begin();
+    for (std::vector<std::pair<uint64,uint64_t>>::iterator it = writeset->begin();
          it != writeset->end(); ++it) {
-      Writeset_history::iterator hst = m_writeset_history.find(*it);
+      Writeset_history::iterator hst = m_writeset_history.find(it->first);
       if (hst != m_writeset_history.end()) {
         if (hst->second > last_parent && hst->second < sequence_number)
           last_parent = hst->second;
 
         hst->second = sequence_number;
       } else {
-        if (!exceeds_capacity)
+        if (!exceeds_capacity){
+          table_id = it->second;
           m_writeset_history.insert(
-              std::pair<uint64, int64>(*it, sequence_number));
+              std::pair<uint64, int64>(it->first, sequence_number));
           m_table_writeset.insert(
-        	  std::pair<uint64_t, uint64>(table_id, *it));
+        	  std::pair<uint64_t, uint64>(table_id, it->first));
+        }
       }
     }
 
@@ -296,16 +298,17 @@ void Writeset_trx_dependency_tracker::get_dependency(THD *thd,
       m_writeset_history.clear();
       m_table_writeset.clear();
     } else {
-      std::cout<<m_table_writeset.count(table_id);
-      auto ptr = m_table_writeset.equal_range(table_id);
-      if (ptr.first != std::end(m_table_writeset)) {
-    	  for (auto iter = ptr.first ; iter != ptr.second ; ++iter) {
-    		  m_writeset_history.erase(iter->second);
-    		  m_table_writeset.erase(iter);
-    	  }
-      }
-//      m_writeset_history.clear();
-//      m_table_writeset.clear();
+      TABLE *table;
+	  for (table = thd->open_tables; table; table = table->next) {
+		table_id = table->s->table_map_id.id();//get the old table_id or do nothing
+		std::pair<std::multimap<uint64_t,uint64>::iterator,std::multimap<uint64_t,uint64>::iterator> ptr = m_table_writeset.equal_range(table_id);
+		if (ptr.first != std::end(m_table_writeset)) {
+		  for (std::multimap<uint64_t,uint64>::iterator iter = ptr.first ; iter != ptr.second ; ++iter) {
+			  m_writeset_history.erase(iter->second);
+			  m_table_writeset.erase(iter);
+		  }
+		}
+	  }
     }
   }
 }

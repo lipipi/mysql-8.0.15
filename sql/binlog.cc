@@ -957,19 +957,28 @@ class binlog_trx_cache_data : public binlog_cache_data {
   my_off_t get_byte_position_raw() const { return m_cache.length(); }
   my_off_t get_byte_position() const { return m_cache0.length() + Seperator_log_event::get_log_event_size() + m_cache.length(); }
 
-  Binlog_cache_storage *get_cache0() { return &m_cache0; }
+  Binlog_cache_storage *get_cache0(THD *thd) {
+	this->add_a_seperator_event(thd);
+	return &m_cache0;
+  }
 
+  /**
+   * only group replication
+   * this function will be called twice
+   * [fisrt]	group_replication_trans_before_commit
+   * [second]	order_committed
+   */
   void add_a_seperator_event(THD *thd_arg){
-	DBUG_ASSERT(add_seperator == false);
-	add_seperator = true;
-	Seperator_log_event the_event(thd_arg);
-	this->write_event(&the_event);
+	if (!add_seperator){
+	  add_seperator = true;
+	  Seperator_log_event the_event(thd_arg);
+	  this->write_event(&the_event);
+	}
   }
 
   int get_caches(Binlog_cache_storage **caches, THD *thd_arg) {
 	DBUG_ENTER("binlog_trx_cache_data::get_cache");
-	this->add_a_seperator_event(thd_arg);
-	caches[0] = get_cache0();
+	caches[0] = get_cache0(thd_arg);
 	caches[1] = get_cache();
 	DBUG_RETURN(2);
   }
@@ -1094,7 +1103,7 @@ class binlog_cache_mngr {
   }
 
   Binlog_cache_storage *get_stmt_cache() { return stmt_cache.get_cache(); }
-  Binlog_cache_storage *get_trx_cache0() { return trx_cache.get_cache0(); }
+  Binlog_cache_storage *get_trx_cache0(THD *thd) { return trx_cache.get_cache0(thd); }
   Binlog_cache_storage *get_trx_cache() { return trx_cache.get_cache(); }
   /**
     Convenience method to check if both caches are empty.
@@ -2749,7 +2758,7 @@ int MYSQL_BIN_LOG::rollback(THD *thd, bool all) {
   if (error == 0 && stuff_logged) {
     if (RUN_HOOK(
             transaction, before_commit,
-            (thd, all, thd_get_cache_mngr(thd)->get_trx_cache0(), thd_get_cache_mngr(thd)->get_trx_cache(),
+            (thd, all, thd_get_cache_mngr(thd)->get_trx_cache0(thd), thd_get_cache_mngr(thd)->get_trx_cache(),
              thd_get_cache_mngr(thd)->get_stmt_cache(),
              max<my_off_t>(max_binlog_cache_size, max_binlog_stmt_cache_size),
              false))) {
@@ -8137,7 +8146,7 @@ TC_LOG::enum_result MYSQL_BIN_LOG::commit(THD *thd, bool all, bool online_ddl) {
   if (stmt_stuff_logged || trx_stuff_logged) {
     if (RUN_HOOK(
             transaction, before_commit,
-            (thd, all, thd_get_cache_mngr(thd)->get_trx_cache0(), thd_get_cache_mngr(thd)->get_trx_cache(),
+            (thd, all, thd_get_cache_mngr(thd)->get_trx_cache0(thd), thd_get_cache_mngr(thd)->get_trx_cache(),
              thd_get_cache_mngr(thd)->get_stmt_cache(),
              max<my_off_t>(max_binlog_cache_size, max_binlog_stmt_cache_size),
              is_atomic_ddl)) ||

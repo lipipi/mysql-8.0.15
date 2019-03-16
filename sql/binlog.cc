@@ -969,8 +969,8 @@ class binlog_trx_cache_data : public binlog_cache_data {
   int get_caches(Binlog_cache_storage **caches, THD *thd_arg) {
 	DBUG_ENTER("binlog_trx_cache_data::get_cache");
 	this->add_a_seperator_event(thd_arg);
-	caches[0] = &m_cache0;
-	caches[1] = &m_cache;
+	caches[0] = get_cache0();
+	caches[1] = get_cache();
 	DBUG_RETURN(2);
   }
 
@@ -1742,7 +1742,7 @@ int MYSQL_BIN_LOG::gtid_end_transaction(THD *thd) {
 
 int binlog_cache_data::get_caches(Binlog_cache_storage **caches, THD *thd_arg MY_ATTRIBUTE((unused))){
 	DBUG_ENTER("binlog_cache_data::get_cache");
-	caches[0] = &m_cache;
+	caches[0] = get_cache();
 	caches[1] = NULL;
 	DBUG_RETURN(1);
 }

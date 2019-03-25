@@ -5962,6 +5962,10 @@ int Xid_apply_log_event::do_apply_event(Relay_log_info const *rli) {
   volatile my_off_t new_group_master_log_pos;
   volatile my_off_t new_group_relay_log_pos;
 
+  Relay_log_info *rli_ptr = const_cast<Relay_log_info *>(rli);
+  if ((error = clear(rli_ptr))) {
+	  goto err;
+  }
   lex_start(thd);
   mysql_reset_thd_for_next_command(thd);
   /*
@@ -5973,7 +5977,6 @@ int Xid_apply_log_event::do_apply_event(Relay_log_info const *rli) {
     re-acquire anonymous ownership.
   */
   gtid_reacquire_ownership_if_anonymous(thd);
-  Relay_log_info *rli_ptr = const_cast<Relay_log_info *>(rli);
 
   /* For a slave Xid_log_event is COMMIT */
   query_logger.general_log_print(thd, COM_QUERY,

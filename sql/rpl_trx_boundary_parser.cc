@@ -199,6 +199,7 @@ Transaction_boundary_parser::get_event_boundary_type(
     */
     case binary_log::EXECUTE_LOAD_QUERY_EVENT:
     case binary_log::TABLE_MAP_EVENT:
+    case binary_log::SEPERATOR_EVENT:
     case binary_log::APPEND_BLOCK_EVENT:
     case binary_log::BEGIN_LOAD_QUERY_EVENT:
     case binary_log::ROWS_QUERY_LOG_EVENT:

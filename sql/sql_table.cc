@@ -15701,7 +15701,7 @@ bool mysql_alter_table(THD *thd, const char *new_db, const char *new_name,
     alter_table_manage_keys(thd, table, table->file->indexes_are_disabled(),
                             alter_info->keys_onoff);
     DBUG_ASSERT(!(new_db_type->flags & HTON_SUPPORTS_ATOMIC_DDL));
-    if (trans_commit_stmt(thd) || trans_commit_implicit(thd))
+    if (trans_commit_stmt(thd) || trans_commit_implicit(thd, false, true))
       goto err_new_table_cleanup;
   }
 
@@ -15739,13 +15739,13 @@ bool mysql_alter_table(THD *thd, const char *new_db, const char *new_name,
       */
       if (!thd->transaction_rollback_request) {
         (void)trans_commit_stmt(thd);
-        (void)trans_commit_implicit(thd);
+        (void)trans_commit_implicit(thd, false, true);
       }
       DBUG_RETURN(true);
     }
 
     // Do implicit commit for consistency with non-temporary table case/
-    if (trans_commit_stmt(thd) || trans_commit_implicit(thd)) DBUG_RETURN(true);
+    if (trans_commit_stmt(thd) || trans_commit_implicit(thd, false, true)) DBUG_RETURN(true);
 
     goto end_temporary;
   }
@@ -15808,7 +15808,7 @@ bool mysql_alter_table(THD *thd, const char *new_db, const char *new_name,
 
     Disable_gtid_state_update_guard disabler(thd);
 
-    if (trans_commit_stmt(thd) || trans_commit_implicit(thd))
+    if (trans_commit_stmt(thd) || trans_commit_implicit(thd, false, true))
       goto err_new_table_cleanup;
 
     // Safety, in-memory dd::Table is no longer totally correct.
@@ -16105,7 +16105,7 @@ end_inplace_noop:
   }
 
   // Commit if it was not done before in order to be able to reopen tables.
-  if (atomic_replace && (trans_commit_stmt(thd) || trans_commit_implicit(thd)))
+  if (atomic_replace && (trans_commit_stmt(thd) || trans_commit_implicit(thd, false, true)))
     goto err_with_mdl;
 
   if ((new_db_type->flags & HTON_SUPPORTS_ATOMIC_DDL) && new_db_type->post_ddl)

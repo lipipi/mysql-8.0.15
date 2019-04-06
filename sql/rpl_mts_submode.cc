@@ -408,11 +408,14 @@ longlong Mts_submode_logical_clock::get_lwm_timestamp(Relay_log_info *rli,
                  the caller thread is found killed.
 */
 bool Mts_submode_logical_clock::wait_for_get_table_def(
-    Relay_log_info *rli){
+    Relay_log_info *rli, longlong last_committed_arg) {
+	Slave_job_group *ptr_g = NULL;
 	//check all the workers , didn't all of them do_apply_event(Table_map_log_event);
 	for (Slave_worker **it = rli->workers.begin(); it != rli->workers.end();
 	     ++it) {
 	  Slave_worker *w_i = *it;
+	  ptr_g = w_i->c_rli->gaq->get_job_group(w_i->gaq_index);
+	  if (ptr_g->sequence_number > last_committed_arg) continue;
 	  if (w_i->table_def_get == false && w_i->jobs.len) return true;
     }
 	return false;
@@ -637,7 +640,7 @@ int Mts_submode_logical_clock::schedule_next_event(Relay_log_info *rli,
         At awakening set min_waited_timestamp to commit_parent in the
         subsequent GAQ index (could be NIL).
       */
-      if (online_ddl && !wait_for_get_table_def(rli)) {
+      if (online_ddl && !wait_for_get_table_def(rli, last_committed)) {
 
       } else {
       if (wait_for_last_committed_trx(rli, last_committed)) {
